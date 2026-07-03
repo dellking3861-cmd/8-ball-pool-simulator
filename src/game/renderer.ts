@@ -1,4 +1,4 @@
-import { Ball, Particle, ScreenShake, TrajectoryHit } from './types';
+import { Ball, Particle, ScreenShake, TrajectoryHit, SpinState } from './types';
 import {
   TABLE_WIDTH, TABLE_HEIGHT, CUSHION_WIDTH, POCKET_RADIUS,
   POCKETS, MAX_SHOT_POWER
@@ -56,7 +56,7 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   ctx.fillStyle = '#18613A';
   ctx.fillRect(0, 0, TABLE_WIDTH * scale, TABLE_HEIGHT * scale);
 
-  // ── felt surface ──
+  // ── felt surface with texture ──
   const feltGrad = ctx.createRadialGradient(
     TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, 0,
     TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.55 * scale
@@ -69,13 +69,17 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   ctx.fillRect(feltL * scale, feltL * scale,
     (TABLE_WIDTH - feltL * 2) * scale, (TABLE_HEIGHT - feltL * 2) * scale);
 
-  // subtle felt texture
-  ctx.globalAlpha = 0.025;
-  for (let i = 0; i < 300; i++) {
+  // subtle felt texture (fiber-like lines)
+  ctx.globalAlpha = 0.02;
+  for (let i = 0; i < 200; i++) {
     const rx = (feltL + Math.random() * (TABLE_WIDTH - feltL * 2)) * scale;
     const ry = (feltL + Math.random() * (TABLE_HEIGHT - feltL * 2)) * scale;
-    ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#fff';
-    ctx.fillRect(rx, ry, 1.5 * scale, 1.5 * scale);
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 0.5 + Math.random() * 1;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx + (Math.random() - 0.5) * 8, ry + (Math.random() - 0.5) * 8);
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
@@ -160,7 +164,6 @@ function drawCushions(ctx: CanvasRenderingContext2D, s: number) {
   // inner edge highlight (rubber)
   ctx.strokeStyle = 'rgba(100,220,130,0.18)';
   ctx.lineWidth = 2 * s;
-  // top
   ctx.beginPath();
   ctx.moveTo((cw + POCKET_RADIUS * 1.5) * s, (cw - 1) * s);
   ctx.lineTo((tw / 2 - POCKET_RADIUS * 1.2) * s, (cw - 1) * s);
@@ -169,7 +172,6 @@ function drawCushions(ctx: CanvasRenderingContext2D, s: number) {
   ctx.moveTo((tw / 2 + POCKET_RADIUS * 1.2) * s, (cw - 1) * s);
   ctx.lineTo((tw - cw - POCKET_RADIUS * 1.5) * s, (cw - 1) * s);
   ctx.stroke();
-  // bottom
   ctx.beginPath();
   ctx.moveTo((cw + POCKET_RADIUS * 1.5) * s, (th - cw + 1) * s);
   ctx.lineTo((tw / 2 - POCKET_RADIUS * 1.2) * s, (th - cw + 1) * s);
@@ -178,12 +180,10 @@ function drawCushions(ctx: CanvasRenderingContext2D, s: number) {
   ctx.moveTo((tw / 2 + POCKET_RADIUS * 1.2) * s, (th - cw + 1) * s);
   ctx.lineTo((tw - cw - POCKET_RADIUS * 1.5) * s, (th - cw + 1) * s);
   ctx.stroke();
-  // left
   ctx.beginPath();
   ctx.moveTo((cw - 1) * s, (cw + POCKET_RADIUS * 1.5) * s);
   ctx.lineTo((cw - 1) * s, (th - cw - POCKET_RADIUS * 1.5) * s);
   ctx.stroke();
-  // right
   ctx.beginPath();
   ctx.moveTo((tw - cw + 1) * s, (cw + POCKET_RADIUS * 1.5) * s);
   ctx.lineTo((tw - cw + 1) * s, (th - cw - POCKET_RADIUS * 1.5) * s);
@@ -197,7 +197,6 @@ function drawDiamonds(ctx: CanvasRenderingContext2D, s: number) {
   const th = TABLE_HEIGHT;
   const dSize = 3.2 * s;
 
-  // top/bottom rail diamonds (skip pocket areas)
   for (let i = 1; i <= 3; i++) {
     const x1 = cw + (tw / 2 - cw) * i / 4;
     const x2 = tw / 2 + (tw / 2 - cw) * i / 4;
@@ -210,7 +209,6 @@ function drawDiamonds(ctx: CanvasRenderingContext2D, s: number) {
       ctx.fill();
     }
   }
-  // side rail diamonds
   for (let i = 1; i <= 3; i++) {
     const y = cw + (th - cw * 2) * i / 4;
     ctx.beginPath();
@@ -224,13 +222,11 @@ function drawDiamonds(ctx: CanvasRenderingContext2D, s: number) {
 
 function drawPockets(ctx: CanvasRenderingContext2D, s: number) {
   for (const p of POCKETS) {
-    // outer shadow
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.beginPath();
     ctx.arc(p.x * s, p.y * s, (POCKET_RADIUS + 4) * s, 0, Math.PI * 2);
     ctx.fill();
 
-    // pocket hole
     const holeGrad = ctx.createRadialGradient(p.x * s, p.y * s, 0, p.x * s, p.y * s, POCKET_RADIUS * s);
     holeGrad.addColorStop(0, '#050505');
     holeGrad.addColorStop(0.85, '#0A0A0A');
@@ -240,7 +236,6 @@ function drawPockets(ctx: CanvasRenderingContext2D, s: number) {
     ctx.arc(p.x * s, p.y * s, POCKET_RADIUS * s, 0, Math.PI * 2);
     ctx.fill();
 
-    // brass rim
     const rimGrad = ctx.createRadialGradient(
       p.x * s, p.y * s, (POCKET_RADIUS - 2) * s,
       p.x * s, p.y * s, (POCKET_RADIUS + 3) * s
@@ -279,7 +274,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  BALL  – 3-D lit sphere with stripe / number
+//  BALL  – 3-D lit sphere with stripe / number / rolling effect
 // ═══════════════════════════════════════════════════════════════
 export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: number, time: number) {
   if (ball.pocketed && ball.sinkAnim <= 0) return;
@@ -305,10 +300,10 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
   ctx.save();
   ctx.globalAlpha = drawAlpha;
 
-  // shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  // shadow (ellipse for realism)
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath();
-  ctx.ellipse(x + 1.5 * scale, y + 2 * scale, r * 0.92, r * 0.65, 0, 0, Math.PI * 2);
+  ctx.ellipse(x + 1.5 * scale, y + 2.5 * scale, r * 0.92, r * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // ball body gradient
@@ -335,7 +330,6 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
     ctx.clip();
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(x - r, y - r * 0.33, r * 2, r * 0.66);
-    // number disc
     ctx.fillStyle = ball.color;
     ctx.beginPath();
     ctx.arc(x, y, r * 0.40, 0, Math.PI * 2);
@@ -380,6 +374,26 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
+  // Rolling illusion: rotating stripe/reflection
+  if (!ball.pocketed && (Math.abs(ball.vx) > 0.5 || Math.abs(ball.vy) > 0.5)) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.clip();
+    // Moving highlight to simulate rolling
+    const rollAngle = ball.rotation;
+    const hx = x + Math.cos(rollAngle) * r * 0.3;
+    const hy = y + Math.sin(rollAngle) * r * 0.3;
+    const rollHL = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.3);
+    rollHL.addColorStop(0, 'rgba(255,255,255,0.15)');
+    rollHL.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rollHL;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // cue ball ambient glow
   if (ball.id === 0 && !ball.pocketed) {
     const ga = 0.06 + Math.sin(time * 0.003) * 0.03;
@@ -407,6 +421,7 @@ export function renderCueAndTrajectory(
   time: number,
   trajectory: TrajectoryHit | null,
   isCharging: boolean,
+  spin: SpinState | null = null,
 ) {
   if (ball.pocketed) return;
 
@@ -421,7 +436,6 @@ export function renderCueAndTrajectory(
   const aimLen = trajectory ? trajectory.aimDist : 500;
   const isWrong = trajectory?.isWrongBall ?? false;
 
-  // Main aim line — bright cyan, thick, highly visible on green felt
   const aimColor = isWrong ? 'rgba(255,60,80,0.7)' : 'rgba(0,240,255,0.55)';
   const aimGlow  = isWrong ? 'rgba(255,60,80,0.15)' : 'rgba(0,240,255,0.1)';
 
@@ -460,14 +474,12 @@ export function renderCueAndTrajectory(
     // ── WRONG-BALL red marker on target ball ──
     if (isWrong) {
       const tbx = tb.x * scale, tby = tb.y * scale, tbr = tb.radius * scale;
-      // pulsing red ring
       const rAlpha = 0.55 + Math.sin(time * 0.008) * 0.2;
       ctx.strokeStyle = `rgba(255,40,40,${rAlpha})`;
       ctx.lineWidth = 3 * scale;
       ctx.beginPath();
       ctx.arc(tbx, tby, tbr + 4 * scale, 0, Math.PI * 2);
       ctx.stroke();
-      // red X through the ball
       ctx.strokeStyle = `rgba(255,50,50,${rAlpha})`;
       ctx.lineWidth = 2.5 * scale;
       ctx.lineCap = 'round';
@@ -479,7 +491,7 @@ export function renderCueAndTrajectory(
       ctx.lineCap = 'butt';
     }
 
-    // ── target ball deflection line — bright magenta/yellow ──
+    // ── target ball deflection line ──
     const dCos = Math.cos(trajectory.deflectAngle);
     const dSin = Math.sin(trajectory.deflectAngle);
     const deflLen = 100 * scale;
@@ -487,14 +499,12 @@ export function renderCueAndTrajectory(
     const deflColor = isWrong ? 'rgba(255,80,80,0.5)' : 'rgba(255,220,0,0.65)';
     const deflGlow  = isWrong ? 'rgba(255,80,80,0.1)' : 'rgba(255,220,0,0.12)';
 
-    // glow
     ctx.strokeStyle = deflGlow;
     ctx.lineWidth = 5 * scale;
     ctx.beginPath();
     ctx.moveTo(tb.x * scale, tb.y * scale);
     ctx.lineTo(tb.x * scale + dCos * deflLen, tb.y * scale + dSin * deflLen);
     ctx.stroke();
-    // line
     ctx.strokeStyle = deflColor;
     ctx.lineWidth = 2.5 * scale;
     ctx.setLineDash([4 * scale, 4 * scale]);
@@ -504,7 +514,6 @@ export function renderCueAndTrajectory(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // arrowhead
     const ax = tb.x * scale + dCos * deflLen;
     const ay = tb.y * scale + dSin * deflLen;
     ctx.fillStyle = deflColor;
@@ -535,7 +544,7 @@ export function renderCueAndTrajectory(
       ctx.setLineDash([]);
     }
 
-    // impact marker — pulsing
+    // impact marker
     const impA = 0.4 + Math.sin(time * 0.006) * 0.2;
     ctx.strokeStyle = isWrong ? `rgba(255,60,60,${impA})` : `rgba(0,255,220,${impA})`;
     ctx.lineWidth = 2 * scale;
@@ -544,6 +553,32 @@ export function renderCueAndTrajectory(
     ctx.moveTo(hx - cs, hy); ctx.lineTo(hx + cs, hy);
     ctx.moveTo(hx, hy - cs); ctx.lineTo(hx, hy + cs);
     ctx.stroke();
+  }
+
+  // ── Spin indicator dots on cue ball ──
+  if (spin && (spin.topSpin > 0.05 || spin.backSpin > 0.05 || spin.leftSpin > 0.05 || spin.rightSpin > 0.05)) {
+    const sr = ball.radius * scale * 1.1;
+    const dotR = 2.5 * scale;
+    // Top spin indicator (above)
+    if (spin.topSpin > 0.05) {
+      ctx.fillStyle = `rgba(0,255,100,${0.3 + spin.topSpin * 0.4})`;
+      ctx.beginPath(); ctx.arc(x, y - sr, dotR, 0, Math.PI * 2); ctx.fill();
+    }
+    // Back spin indicator (below)
+    if (spin.backSpin > 0.05) {
+      ctx.fillStyle = `rgba(255,100,0,${0.3 + spin.backSpin * 0.4})`;
+      ctx.beginPath(); ctx.arc(x, y + sr, dotR, 0, Math.PI * 2); ctx.fill();
+    }
+    // Left spin indicator
+    if (spin.leftSpin > 0.05) {
+      ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.leftSpin * 0.4})`;
+      ctx.beginPath(); ctx.arc(x - sr, y, dotR, 0, Math.PI * 2); ctx.fill();
+    }
+    // Right spin indicator
+    if (spin.rightSpin > 0.05) {
+      ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.rightSpin * 0.4})`;
+      ctx.beginPath(); ctx.arc(x + sr, y, dotR, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   // ── cue stick ──
@@ -747,6 +782,77 @@ export function getPowerBarBounds(canvasW: number, canvasH: number, scale: numbe
   const bx = canvasW - 48 * s;
   const by = (canvasH - barH) / 2;
   return { x: bx - 12 * s, y: by - 32 * s, w: barW + 24 * s, h: barH + 64 * s, barY: by, barH };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPIN INDICATOR UI
+// ═══════════════════════════════════════════════════════════════
+export function renderSpinIndicator(
+  ctx: CanvasRenderingContext2D,
+  spin: SpinState,
+  _canvasW: number,
+  canvasH: number,
+  scale: number,
+) {
+  const s = Math.min(scale, 1.3);
+  const sz = 50 * s;
+  const cx = 50 * s;
+  const cy = canvasH - 50 * s;
+
+  // Background circle
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, sz + 5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, sz + 5 * s, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = `${6 * s}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.fillText('SPIN', cx, cy - sz - 8 * s);
+
+  // Top spin indicator
+  const dotR = 4 * s;
+  const dist = sz * 0.7;
+  if (spin.topSpin > 0.05) {
+    ctx.fillStyle = `rgba(0,255,100,${0.3 + spin.topSpin * 0.5})`;
+    ctx.beginPath(); ctx.arc(cx, cy - dist, dotR + spin.topSpin * 2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `${5 * s}px Arial`;
+    ctx.fillText('T', cx, cy - dist + 2 * s);
+  }
+  if (spin.backSpin > 0.05) {
+    ctx.fillStyle = `rgba(255,100,0,${0.3 + spin.backSpin * 0.5})`;
+    ctx.beginPath(); ctx.arc(cx, cy + dist, dotR + spin.backSpin * 2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `${5 * s}px Arial`;
+    ctx.fillText('B', cx, cy + dist + 2 * s);
+  }
+  if (spin.leftSpin > 0.05) {
+    ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.leftSpin * 0.5})`;
+    ctx.beginPath(); ctx.arc(cx - dist, cy, dotR + spin.leftSpin * 2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `${5 * s}px Arial`;
+    ctx.fillText('L', cx - dist, cy + 2 * s);
+  }
+  if (spin.rightSpin > 0.05) {
+    ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.rightSpin * 0.5})`;
+    ctx.beginPath(); ctx.arc(cx + dist, cy, dotR + spin.rightSpin * 2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `${5 * s}px Arial`;
+    ctx.fillText('R', cx + dist, cy + 2 * s);
+  }
+
+  // Center dot
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2 * s, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1008,7 +1114,7 @@ export function renderPlayerHUD(
   ctx.quadraticCurveTo(p2x, p1y, p2x + 6 * s, p1y);
   ctx.closePath(); ctx.fill();
   if (p2Active) {
-    ctx.strokeStyle = `rgba(255,160,0,${0.5 + Math.sin(time * 0.005) * 0.2})`;
+    ctx.strokeStyle = `rgba(255,180,0,${0.5 + Math.sin(time * 0.005) * 0.2})`;
     ctx.lineWidth = 2; ctx.stroke();
   }
 
@@ -1017,7 +1123,6 @@ export function renderPlayerHUD(
   ctx.fillText('P2', p2x + boxW - 8 * s, p1y + 15 * s);
   ctx.font = `${9 * s}px Arial`;
   ctx.fillStyle = p2Active ? '#FFF' : '#888';
-  ctx.textAlign = 'right';
   const p2Label = p2Type === 'solids' ? '● Solids' : p2Type === 'stripes' ? '◐ Stripes' : '—';
   ctx.fillText(p2Label, p2x + boxW - 8 * s, p1y + 28 * s);
   ctx.fillStyle = '#FFD700';

@@ -2,7 +2,12 @@ import { Ball, Particle, Vec2, TrajectoryHit } from './types';
 import {
   TABLE_WIDTH, TABLE_HEIGHT, CUSHION_WIDTH, POCKET_RADIUS,
   FRICTION, WALL_RESTITUTION, BALL_RESTITUTION, MIN_VELOCITY,
-  POCKETS, BALL_RADIUS, BALL_COLORS
+  POCKETS, BALL_RADIUS, BALL_COLORS, BALL_MASS,
+  SPIN_FACTOR, SPIN_DECAY, MAX_SPIN, SPIN_CUSHION_EFFECT,
+  TOP_SPIN_FACTOR,
+  CUSHION_ENERGY_LOSS, CUSHION_FRICTION,
+  POCKET_DETECT_RADIUS_MULT,
+  PHYSICS_SUBSTEPS, TARGET_DT
 } from './constants';
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -11,15 +16,44 @@ export function distance(a: Vec2, b: Vec2): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-export function updateBallPhysics(ball: Ball): void {
+export function updateBallPhysics(ball: Ball, dt: number = TARGET_DT): void {
   if (ball.pocketed) return;
 
-  ball.x += ball.vx;
-  ball.y += ball.vy;
+  const steps = PHYSICS_SUBSTEPS;
+  const subDt = dt / steps;
 
-  ball.vx *= FRICTION;
-  ball.vy *= FRICTION;
+  for (let s = 0; s < steps; s++) {
+    // Apply velocity with sub-step
+    ball.x += ball.vx * subDt * 60;
+    ball.y += ball.vy * subDt * 60;
 
+    // Apply friction (rolling resistance)
+    ball.vx *= Math.pow(FRICTION, subDt * 60);
+    ball.vy *= Math.pow(FRICTION, subDt * 60);
+
+    // Apply spin decay
+    ball.spinX *= Math.pow(SPIN_DECAY, subDt * 60);
+    ball.spinY *= Math.pow(SPIN_DECAY, subDt * 60);
+
+    // Spin affects velocity: top/back spin adds/subtracts from velocity
+    if (Math.abs(ball.spinX) > 0.01) {
+      ball.vx += ball.spinX * SPIN_FACTOR * subDt * 60 * 0.02;
+    }
+    if (Math.abs(ball.spinY) > 0.01) {
+      ball.vy += ball.spinY * SPIN_FACTOR * subDt * 60 * 0.02;
+    }
+
+    // Angular velocity for visual rolling effect
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    ball.angularV = speed / ball.radius;
+    ball.rotation += ball.angularV * subDt * 60 * 0.05;
+
+    // Clamp spin
+    ball.spinX = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, ball.spinX));
+    ball.spinY = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, ball.spinY));
+  }
+
+  // Stop ball if below threshold
   if (Math.abs(ball.vx) < MIN_VELOCITY && Math.abs(ball.vy) < MIN_VELOCITY) {
     ball.vx = 0;
     ball.vy = 0;
@@ -51,25 +85,44 @@ export function checkWallCollision(ball: Ball): { collided: boolean; particles: 
 
   if (ball.x <= left) {
     ball.x = left;
+    // Apply spin effect on cushion rebound
+    const spinEffect = ball.spinY * SPIN_CUSHION_EFFECT;
     ball.vx = Math.abs(ball.vx) * WALL_RESTITUTION;
+    ball.vy += spinEffect;
+    // Energy loss
+    ball.vx *= (1 - CUSHION_ENERGY_LOSS);
+    // Cushion friction
+    ball.vy *= CUSHION_FRICTION;
     collided = true;
     doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
   }
   if (ball.x >= right) {
     ball.x = right;
+    const spinEffect = ball.spinY * SPIN_CUSHION_EFFECT;
     ball.vx = -Math.abs(ball.vx) * WALL_RESTITUTION;
+    ball.vy += spinEffect;
+    ball.vx *= (1 - CUSHION_ENERGY_LOSS);
+    ball.vy *= CUSHION_FRICTION;
     collided = true;
     doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
   }
   if (ball.y <= top) {
     ball.y = top;
+    const spinEffect = ball.spinX * SPIN_CUSHION_EFFECT;
     ball.vy = Math.abs(ball.vy) * WALL_RESTITUTION;
+    ball.vx += spinEffect;
+    ball.vy *= (1 - CUSHION_ENERGY_LOSS);
+    ball.vx *= CUSHION_FRICTION;
     collided = true;
     doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
   }
   if (ball.y >= bottom) {
     ball.y = bottom;
+    const spinEffect = ball.spinX * SPIN_CUSHION_EFFECT;
     ball.vy = -Math.abs(ball.vy) * WALL_RESTITUTION;
+    ball.vx += spinEffect;
+    ball.vy *= (1 - CUSHION_ENERGY_LOSS);
+    ball.vx *= CUSHION_FRICTION;
     collided = true;
     doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
   }
@@ -85,26 +138,50 @@ export function checkBallCollision(a: Ball, b: Ball): { collided: boolean; parti
   const dist = Math.sqrt(dx * dx + dy * dy);
   const minDist = a.radius + b.radius;
 
-  if (dist < minDist && dist > 0) {
+  if (dist < minDist && dist > 0.001) {
     const overlap = minDist - dist;
     const nx = dx / dist;
     const ny = dy / dist;
 
-    a.x -= nx * overlap / 2;
-    a.y -= ny * overlap / 2;
-    b.x += nx * overlap / 2;
-    b.y += ny * overlap / 2;
+    // Mass-weighted position correction
+    const totalMass = a.mass + b.mass;
+    a.x -= nx * overlap * (b.mass / totalMass);
+    a.y -= ny * overlap * (b.mass / totalMass);
+    b.x += nx * overlap * (a.mass / totalMass);
+    b.y += ny * overlap * (a.mass / totalMass);
 
+    // Relative velocity along collision normal
     const dvx = a.vx - b.vx;
     const dvy = a.vy - b.vy;
     const dvDotN = dvx * nx + dvy * ny;
 
     if (dvDotN > 0) {
-      const impulse = dvDotN * BALL_RESTITUTION;
-      a.vx -= impulse * nx;
-      a.vy -= impulse * ny;
-      b.vx += impulse * nx;
-      b.vy += impulse * ny;
+      // Elastic collision with mass weighting
+      const impulse = (1 + BALL_RESTITUTION) * dvDotN / (1 / a.mass + 1 / b.mass);
+      a.vx -= (impulse / a.mass) * nx;
+      a.vy -= (impulse / a.mass) * ny;
+      b.vx += (impulse / b.mass) * nx;
+      b.vy += (impulse / b.mass) * ny;
+
+      // Transfer spin on collision
+      const tangentX = -ny;
+      const tangentY = nx;
+      const relTangentVel = dvx * tangentX + dvy * tangentY;
+      const spinTransfer = relTangentVel * 0.05;
+
+      a.spinX += spinTransfer * tangentX * 0.5;
+      a.spinY += spinTransfer * tangentY * 0.5;
+      b.spinX += spinTransfer * tangentX * 0.5;
+      b.spinY += spinTransfer * tangentY * 0.5;
+
+      // Apply spin effects on target ball after collision
+      // Top spin on cue ball = target ball gets forward momentum
+      if (a.id === 0 && Math.abs(a.spinX) > 0.1) {
+        b.vx += a.spinX * TOP_SPIN_FACTOR * 0.1;
+      }
+      if (b.id === 0 && Math.abs(b.spinX) > 0.1) {
+        a.vx += b.spinX * TOP_SPIN_FACTOR * 0.1;
+      }
     }
 
     const particles: Particle[] = [];
@@ -132,7 +209,9 @@ export function checkPocketCollision(ball: Ball): { pocketed: boolean; pocketInd
     const pocket = POCKETS[i];
     const dist = distance({ x: ball.x, y: ball.y }, pocket);
 
-    if (dist < POCKET_RADIUS + ball.radius * 0.3) {
+    // Progressive detection: ball enters pocket partially before being pocketed
+    const detectRadius = POCKET_RADIUS + ball.radius * POCKET_DETECT_RADIUS_MULT;
+    if (dist < detectRadius) {
       const particles: Particle[] = [];
       for (let j = 0; j < 24; j++) {
         particles.push(createPocketParticle(pocket.x, pocket.y, ball.color));
@@ -148,7 +227,12 @@ export function checkPocketCollision(ball: Ball): { pocketed: boolean; pocketInd
 }
 
 export function areBallsMoving(balls: Ball[]): boolean {
-  return balls.some(b => !b.pocketed && (Math.abs(b.vx) > MIN_VELOCITY || Math.abs(b.vy) > MIN_VELOCITY));
+  return balls.some(b => !b.pocketed && (
+    Math.abs(b.vx) > MIN_VELOCITY ||
+    Math.abs(b.vy) > MIN_VELOCITY ||
+    Math.abs(b.spinX) > 0.05 ||
+    Math.abs(b.spinY) > 0.05
+  ));
 }
 
 // ─── Trajectory prediction ──────────────────────────────────────────
@@ -191,10 +275,8 @@ export function computeTrajectory(cueBall: Ball, angle: number, allBalls: Ball[]
   const deflectAngle = Math.atan2(toDy / toLen, toDx / toLen);
 
   // Cue ball deflects 90° from the target ball's path (approximately)
-  // Normal vector from hit point to target ball center
   const nx = toDx / toLen;
   const ny = toDy / toLen;
-  // Cue ball's tangential component
   const tangentX = dx - (dx * nx + dy * ny) * nx;
   const tangentY = dy - (dx * nx + dy * ny) * ny;
   const cueDeflect = Math.atan2(tangentY, tangentX);
@@ -205,8 +287,6 @@ export function computeTrajectory(cueBall: Ball, angle: number, allBalls: Ball[]
     if (currentPlayerType === 'solids' && hitBall.id > 8) isWrongBall = true;
     if (currentPlayerType === 'stripes' && hitBall.id < 8) isWrongBall = true;
   }
-  // If all own group pocketed, must hit 8-ball; hitting others is wrong
-  // (caller can handle this more precisely, but we flag non-8 as potentially wrong)
 
   return {
     hitPoint: { x: hitX, y: hitY },
@@ -318,6 +398,11 @@ export function createBalls(): Ball[] {
     stripe: false,
     sinkAnim: 0,
     sinkPocket: null,
+    mass: BALL_MASS[0],
+    spinX: 0,
+    spinY: 0,
+    angularV: 0,
+    rotation: 0,
   });
 
   const startX = TABLE_WIDTH * 0.7;
@@ -341,6 +426,11 @@ export function createBalls(): Ball[] {
         stripe: info.stripe,
         sinkAnim: 0,
         sinkPocket: null,
+        mass: BALL_MASS[num],
+        spinX: 0,
+        spinY: 0,
+        angularV: 0,
+        rotation: 0,
       });
       ballIndex++;
     }

@@ -2,8 +2,9 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { GameData, GameState, Ball, HighScore, GameMode } from './types';
 import {
   TABLE_WIDTH, TABLE_HEIGHT, CUSHION_WIDTH,
-  MAX_SHOT_POWER, POWER_CHARGE_SPEED,
-  SCORE_POCKET, SCORE_COMBO, SCORE_FOUL, BALL_RADIUS
+  MAX_SHOT_POWER, POWER_CHARGE_SPEED, MIN_SHOT_POWER,
+  SCORE_POCKET, SCORE_COMBO, SCORE_FOUL, BALL_RADIUS,
+  MAX_DT, SPIN_FACTOR, MAX_SPIN
 } from './constants';
 import {
   createBalls, updateBallPhysics, checkWallCollision,
@@ -14,7 +15,7 @@ import {
 import {
   renderTable, renderBall, renderCueAndTrajectory, renderParticles,
   renderPowerBar, renderAngleIndicator, renderMessage,
-  getPowerBarBounds, renderPlayerHUD
+  getPowerBarBounds, renderPlayerHUD, renderSpinIndicator
 } from './renderer';
 import {
   playHitSound, playCushionSound, playPocketSound,
@@ -23,6 +24,7 @@ import {
 
 const ANGLE_SPEED = 0.028;
 const ANGLE_FINE_SPEED = 0.004;
+const SPIN_CHANGE_SPEED = 0.02;
 
 function loadHS(): HighScore[] { try { const d = localStorage.getItem('pool_high_scores'); return d ? JSON.parse(d) : []; } catch { return []; } }
 function saveHS(s: HighScore[]) { try { localStorage.setItem('pool_high_scores', JSON.stringify(s)); } catch {} }
@@ -91,6 +93,8 @@ export function useGame() {
       message: '', messageTimer: 0, comboCount: 0, totalBallsPocketed: 0,
       highScores: loadHS(), cueBallPlacing: false,
       trajectoryHit: null, powerBarDragging: false, winner: 0,
+      spin: { topSpin: 0, backSpin: 0, leftSpin: 0, rightSpin: 0 },
+      dt: 0, prevTime: performance.now(),
     };
     gameRef.current = game;
     setGameMode(mode);
@@ -103,9 +107,35 @@ export function useGame() {
   // ── shoot ──
   const shoot = useCallback(() => {
     const g = gameRef.current;
-    if (!g || g.state !== 'aiming' || g.cueBall.pocketed || g.shotPower < 0.5) return;
-    g.cueBall.vx = Math.cos(g.shotAngle) * g.shotPower;
-    g.cueBall.vy = Math.sin(g.shotAngle) * g.shotPower;
+    if (!g || g.state !== 'aiming' || g.cueBall.pocketed || g.shotPower < MIN_SHOT_POWER) return;
+
+    // Apply spin to cue ball velocity
+    const angle = g.shotAngle;
+    let power = g.shotPower;
+
+    // Calculate spin effects on initial velocity
+    const spin = g.spin;
+    let vx = Math.cos(angle) * power;
+    let vy = Math.sin(angle) * power;
+
+    // Top spin: adds forward velocity (follow-through)
+    if (spin.topSpin > 0.05) {
+      vx += Math.cos(angle) * spin.topSpin * SPIN_FACTOR * 2;
+      vy += Math.sin(angle) * spin.topSpin * SPIN_FACTOR * 2;
+    }
+    // Back spin: adds backward velocity (draw back)
+    if (spin.backSpin > 0.05) {
+      vx -= Math.cos(angle) * spin.backSpin * SPIN_FACTOR * 2;
+      vy -= Math.sin(angle) * spin.backSpin * SPIN_FACTOR * 2;
+    }
+
+    g.cueBall.vx = vx;
+    g.cueBall.vy = vy;
+
+    // Set cue ball spin values for physics simulation
+    g.cueBall.spinX = (spin.topSpin - spin.backSpin) * MAX_SPIN * 0.5;
+    g.cueBall.spinY = (spin.rightSpin - spin.leftSpin) * MAX_SPIN * 0.5;
+
     g.state = 'rolling'; g.isPowerCharging = false; g.powerBarDragging = false;
     g.turnBallsPocketed = 0; g.foulThisTurn = false; g.comboCount = 0;
     g.trajectoryHit = null; g.firstHitBallId = null; g.pocketedThisTurn = [];
@@ -117,6 +147,7 @@ export function useGame() {
   const switchTurn = useCallback((g: GameData) => {
     g.currentPlayer = g.currentPlayer === 1 ? 2 : 1;
     g.shotPower = 0; g.shotAngle = 0;
+    g.spin = { topSpin: 0, backSpin: 0, leftSpin: 0, rightSpin: 0 };
     const pName = g.currentPlayer === 1 ? 'Player 1' : 'Player 2';
     const pColor = g.currentPlayer === 1 ? '🔵' : '🟠';
     showM(`${pColor} ${pName}'s turn`, 100);
@@ -204,13 +235,11 @@ export function useGame() {
           else if (isOwn) showM(`Ball ${ball.id} pocketed! +${base}`, 60);
           else showM(`Opponent's ball pocketed!`, 60);
         } else {
-          // versus scoring
           if (isOwn) {
             if (game.currentPlayer === 1) game.player1Score += SCORE_POCKET;
             else game.player2Score += SCORE_POCKET;
             showM(`P${game.currentPlayer}: Ball ${ball.id} pocketed! ✓`, 60);
           } else {
-            // pocketed opponent's ball — no foul per 8-ball rules, but opponent benefits
             const opp = game.currentPlayer === 1 ? 2 : 1;
             if (opp === 1) game.player1Score += SCORE_POCKET; else game.player2Score += SCORE_POCKET;
             showM(`P${game.currentPlayer} pocketed opponent's ball ${ball.id}`, 80);
@@ -239,6 +268,14 @@ export function useGame() {
       if (keys.has('ArrowLeft') || keys.has('KeyA')) g.shotAngle -= sp;
       if (keys.has('ArrowRight') || keys.has('KeyD')) g.shotAngle += sp;
 
+      // Spin controls
+      if (keys.has('KeyW')) g.spin.topSpin = Math.min(1, g.spin.topSpin + SPIN_CHANGE_SPEED);
+      if (keys.has('KeyS')) g.spin.backSpin = Math.min(1, g.spin.backSpin + SPIN_CHANGE_SPEED);
+      if (keys.has('KeyQ')) g.spin.leftSpin = Math.min(1, g.spin.leftSpin + SPIN_CHANGE_SPEED);
+      if (keys.has('KeyE')) g.spin.rightSpin = Math.min(1, g.spin.rightSpin + SPIN_CHANGE_SPEED);
+      // Reset spin with Z
+      if (keys.has('KeyZ')) { g.spin = { topSpin: 0, backSpin: 0, leftSpin: 0, rightSpin: 0 }; keys.delete('KeyZ'); }
+
       if (canvasRef.current && mouseRef.current.down && !g.powerBarDragging) {
         const tp = clientToTable(mouseRef.current.x, mouseRef.current.y);
         if (tp.x > 0 && tp.x < TABLE_WIDTH && tp.y > 0 && tp.y < TABLE_HEIGHT) {
@@ -256,7 +293,7 @@ export function useGame() {
       } else if (g.isPowerCharging) { g.isPowerCharging = false; shoot(); return; }
 
       if (g.powerBarDragging && mouseRef.current.down) g.shotPower = powerFromBarY(mouseRef.current.y);
-      if (g.powerBarDragging && !mouseRef.current.down) { g.powerBarDragging = false; if (g.shotPower > 0.5) { shoot(); return; } }
+      if (g.powerBarDragging && !mouseRef.current.down) { g.powerBarDragging = false; if (g.shotPower > MIN_SHOT_POWER) { shoot(); return; } }
       if (keys.has('Enter') && !g.isPowerCharging && g.shotPower > 0) { keys.delete('Enter'); shoot(); return; }
 
       // trajectory with wrong-ball awareness
@@ -284,7 +321,13 @@ export function useGame() {
 
     // ── PHYSICS ──
     if (g.state === 'rolling') {
-      for (const b of g.balls) updateBallPhysics(b);
+      // Delta-time based physics
+      const now = performance.now();
+      let dt = (now - g.prevTime) / 1000;
+      g.prevTime = now;
+      dt = Math.min(dt, MAX_DT); // Cap to prevent physics explosion
+
+      for (const b of g.balls) updateBallPhysics(b, dt);
 
       for (const b of g.balls) {
         const wr = checkWallCollision(b);
@@ -331,11 +374,9 @@ export function useGame() {
       // ── balls stopped ──
       if (!areBallsMoving(g.balls)) {
         // ── CHECK FOULS ──
-        // Foul: first hit was wrong group ball
         if (curType && g.firstHitBallId !== null && g.firstHitBallId !== 8) {
           const firstIsOwn = curType === 'solids' ? g.firstHitBallId <= 7 : g.firstHitBallId >= 9;
 
-          // Check if player should be shooting 8-ball (all own cleared)
           const ownBalls = curType === 'solids'
             ? g.balls.filter(b => b.id >= 1 && b.id <= 7)
             : g.balls.filter(b => b.id >= 9 && b.id <= 15);
@@ -350,7 +391,6 @@ export function useGame() {
             playFoulSound();
           }
         }
-        // Foul: didn't hit any ball
         if (g.firstHitBallId === null && !g.foulThisTurn) {
           g.foulThisTurn = true;
           if (isVs) showM(`⚠️ FOUL! No ball contacted!`, 120);
@@ -358,37 +398,29 @@ export function useGame() {
           playFoulSound();
         }
 
-        // Handle cue ball scratch
         if (g.foulThisTurn && g.cueBall.pocketed) {
           const pos = getDefaultCueBallPosition();
           g.cueBall.x = pos.x; g.cueBall.y = pos.y; g.cueBall.vx = 0; g.cueBall.vy = 0;
           g.cueBall.pocketed = false; g.cueBallPlacing = true;
         } else if (g.foulThisTurn && !g.cueBall.pocketed) {
-          // foul but cue ball still on table — in versus, opponent gets ball in hand
           if (isVs) {
             g.cueBallPlacing = true;
           }
         }
 
-        // ── TURN LOGIC ──
         if (!g.cueBallPlacing) { g.state = 'aiming'; g.shotPower = 0; }
 
         if (isVs) {
-          // Check if current player pocketed any of THEIR OWN balls (not opponent's, not 8, not cue)
           const ownPocketed = g.pocketedThisTurn.filter(id => {
             if (id === 0 || id === 8) return false;
-            if (!curType) return true; // break shot - any pocket counts
+            if (!curType) return true;
             return curType === 'solids' ? id <= 7 : id >= 9;
           });
-          // Keep turn if pocketed own ball and no foul
           if (ownPocketed.length > 0 && !g.foulThisTurn) {
-            // keep shooting
             const pn = g.currentPlayer === 1 ? 'P1' : 'P2';
             showM(`${pn} continues! 🎯`, 60);
           } else {
-            // switch turn
             if (g.cueBallPlacing) {
-              // switch AFTER placement
               switchTurn(g);
             } else {
               switchTurn(g);
@@ -398,7 +430,6 @@ export function useGame() {
 
         setGameState('playing');
 
-        // Check 8-ball notification
         if (curType) {
           const pb = curType === 'solids'
             ? g.balls.filter(b => b.id >= 1 && b.id <= 7)
@@ -418,8 +449,6 @@ export function useGame() {
     if (g.screenShake.elapsed < g.screenShake.duration) g.screenShake.elapsed++;
     if (g.messageTimer > 0) { g.messageTimer--; if (g.messageTimer <= 0) { g.message = ''; setMsg(''); } }
   }, [shoot, handlePocket, showM, addShake, clientToTable, powerFromBarY, switchTurn, getCurrentType]);
-
-
 
   // ══════════════════════════════════════════════════════════
   //  RENDER
@@ -452,7 +481,7 @@ export function useGame() {
     renderBall(ctx, g.cueBall, scale, time);
 
     if (g.state === 'aiming' && !g.cueBallPlacing) {
-      renderCueAndTrajectory(ctx, g.cueBall, g.shotAngle, g.shotPower, scale, time, g.trajectoryHit, g.isPowerCharging || g.powerBarDragging);
+      renderCueAndTrajectory(ctx, g.cueBall, g.shotAngle, g.shotPower, scale, time, g.trajectoryHit, g.isPowerCharging || g.powerBarDragging, g.spin);
     }
 
     if (g.cueBallPlacing) {
@@ -470,9 +499,9 @@ export function useGame() {
     if (g.state === 'aiming' && !g.cueBallPlacing) {
       renderPowerBar(ctx, g.shotPower, cw, ch, scale, g.isPowerCharging || g.powerBarDragging, time);
       renderAngleIndicator(ctx, g.shotAngle, cw, ch, scale);
+      renderSpinIndicator(ctx, g.spin, cw, ch, scale);
     }
 
-    // player HUD for versus
     renderPlayerHUD(ctx, g.currentPlayer, g.player1Type, g.player2Type, g.player1Score, g.player2Score, cw, scale, isVs, time);
 
     // Score (solo) or turn indicator at center-top
@@ -484,7 +513,6 @@ export function useGame() {
         ctx.fillText(`Playing: ${g.player1Type === 'solids' ? 'SOLIDS (1-7)' : 'STRIPES (9-15)'}`, cw / 2, 37 * uiS);
       }
     } else {
-      // versus turn indicator
       const pCol = g.currentPlayer === 1 ? '#00CCFF' : '#FFAA00';
       ctx.fillStyle = pCol; ctx.font = `bold ${14 * uiS}px Arial`; ctx.textAlign = 'center';
       ctx.fillText(`Player ${g.currentPlayer}'s Turn`, cw / 2, 20 * uiS);
@@ -507,11 +535,16 @@ export function useGame() {
 
     if (g.state === 'aiming' && !g.cueBallPlacing) {
       ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = `${7.5 * uiS}px Arial`; ctx.textAlign = 'center';
-      ctx.fillText('← → Aim  |  HOLD SPACE charge & release  |  SHIFT Fine  |  Click aim • Drag sidebar power', cw / 2, ch - 5 * uiS);
+      ctx.fillText('← → Aim  |  HOLD SPACE charge & release  |  SHIFT Fine  |  W/S Top/Back Spin  |  Q/E Left/Right Spin  |  Z Reset', cw / 2, ch - 5 * uiS);
     }
   }, [getScale]);
 
-  const gameLoop = useCallback(() => { timeRef.current = performance.now(); update(); render(); rafRef.current = requestAnimationFrame(gameLoop); }, [update, render]);
+  const gameLoop = useCallback(() => {
+    timeRef.current = performance.now();
+    update();
+    render();
+    rafRef.current = requestAnimationFrame(gameLoop);
+  }, [update, render]);
   const startGame = useCallback((mode: GameMode = 'solo') => { initGame(mode); showM(mode === 'versus' ? '🔵 Player 1 breaks! 🎱' : 'Break the rack! 🎱', 120); }, [initGame, showM]);
   const pauseGame = useCallback(() => {
     const g = gameRef.current; if (!g) return;
@@ -520,7 +553,12 @@ export function useGame() {
   }, []);
 
   // ── INPUT ──
-  const handleKeyDown = useCallback((e: KeyboardEvent) => { keysRef.current.add(e.code); if (e.code === 'Escape' || e.code === 'KeyP') pauseGame(); if (e.code === 'KeyR' && gameRef.current?.state === 'gameover') startGame(gameRef.current.gameMode); e.preventDefault(); }, [pauseGame, startGame]);
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    keysRef.current.add(e.code);
+    if (e.code === 'Escape' || e.code === 'KeyP') pauseGame();
+    if (e.code === 'KeyR' && gameRef.current?.state === 'gameover') startGame(gameRef.current.gameMode);
+    e.preventDefault();
+  }, [pauseGame, startGame]);
   const handleKeyUp = useCallback((e: KeyboardEvent) => { keysRef.current.delete(e.code); }, []);
   const handleMouseMove = useCallback((e: MouseEvent) => { mouseRef.current.x = e.clientX; mouseRef.current.y = e.clientY; }, []);
   const handleMouseDown = useCallback((e: MouseEvent) => {
@@ -533,7 +571,7 @@ export function useGame() {
   const handleMouseUp = useCallback(() => {
     mouseRef.current.down = false; const g = gameRef.current; if (!g) return;
     if (g.cueBallPlacing) { g.cueBallPlacing = false; g.cueBall.pocketed = false; g.state = 'aiming'; return; }
-    if (g.powerBarDragging) { g.powerBarDragging = false; if (g.shotPower > 0.5) shoot(); }
+    if (g.powerBarDragging) { g.powerBarDragging = false; if (g.shotPower > MIN_SHOT_POWER) shoot(); }
   }, [shoot]);
   const handleTouchStart = useCallback((e: TouchEvent) => {
     e.preventDefault(); if (e.touches.length < 1) return; const t = e.touches[0];
@@ -548,7 +586,7 @@ export function useGame() {
     e.preventDefault(); mouseRef.current.down = false; touchRef.current.active = false;
     const g = gameRef.current; if (!g) return;
     if (g.cueBallPlacing) { g.cueBallPlacing = false; g.cueBall.pocketed = false; g.state = 'aiming'; return; }
-    if (g.powerBarDragging) { g.powerBarDragging = false; if (g.shotPower > 0.5) shoot(); }
+    if (g.powerBarDragging) { g.powerBarDragging = false; if (g.shotPower > MIN_SHOT_POWER) shoot(); }
   }, [shoot]);
 
   useEffect(() => {
