@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0B1622;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Smooth font rendering */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent overscroll bounce on mobile */
+html {
+  overscroll-behavior: none;
+}
+
+canvas {
+  image-rendering: auto;
+  -webkit-image-smoothing: auto;
+}
