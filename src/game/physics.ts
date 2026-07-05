@@ -9,7 +9,8 @@ import {
   CUSHION_ENERGY_LOSS, CUSHION_FRICTION,
   POCKET_DETECT_RADIUS_MULT, POCKET_MOUTH_WIDTH,
   PHYSICS_SUBSTEPS, TARGET_DT,
-  CUSHION_SPARK_THRESHOLD, COLLISION_SPARK_THRESHOLD, MAX_PARTICLES
+  CUSHION_SPARK_THRESHOLD, COLLISION_SPARK_THRESHOLD, MAX_PARTICLES,
+  ROLLING_FRICTION, SLIDING_FRICTION, SLIDING_THRESHOLD, SPIN_TO_ROLL_TRANSITION
 } from './constants';
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -29,9 +30,11 @@ export function updateBallPhysics(ball: Ball, dt: number = TARGET_DT): void {
     ball.x += ball.vx * subDt * 60;
     ball.y += ball.vy * subDt * 60;
 
-    // Apply friction (rolling resistance)
-    ball.vx *= Math.pow(FRICTION, subDt * 60);
-    ball.vy *= Math.pow(FRICTION, subDt * 60);
+    // Enhanced friction model: sliding vs rolling friction
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    const frictionCoeff = speed > SLIDING_THRESHOLD ? SLIDING_FRICTION : ROLLING_FRICTION;
+    ball.vx *= Math.pow(frictionCoeff, subDt * 60);
+    ball.vy *= Math.pow(frictionCoeff, subDt * 60);
 
     // Apply spin decay
     ball.spinX *= Math.pow(SPIN_DECAY, subDt * 60);
@@ -45,23 +48,25 @@ export function updateBallPhysics(ball: Ball, dt: number = TARGET_DT): void {
       ball.vy += ball.spinY * SPIN_FACTOR * subDt * 60 * 0.02;
     }
 
-    // --- NEW: Spin swerve/curve effect ---
-    // Side spin causes the ball to curve in flight (like real billiards)
-    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    // Spin swerve/curve effect
     if (speed > 0.5 && Math.abs(ball.spinY) > 0.1) {
-      // Side spin curves the ball perpendicular to its direction of travel
       const dirX = ball.vx / speed;
       const dirY = ball.vy / speed;
-      // Curve force is perpendicular to direction, proportional to side spin
       const curveForce = ball.spinY * SPIN_CURVE_FACTOR * subDt * 60 * 0.01;
       ball.vx += -dirY * curveForce;
       ball.vy += dirX * curveForce;
     }
-    // Masse effect: vertical spin with steep angle causes curved trajectory
+    // Masse effect
     if (speed > 0.5 && Math.abs(ball.spinX) > 0.1) {
       const masseForce = ball.spinX * MASSE_FACTOR * subDt * 60 * 0.01;
       ball.vx += ball.vy / speed * masseForce;
       ball.vy += -ball.vx / speed * masseForce;
+    }
+
+    // Spin-to-roll transition: at low speeds, spin converts to rolling
+    if (speed < SLIDING_THRESHOLD && speed > 0.1) {
+      ball.spinX *= Math.pow(SPIN_TO_ROLL_TRANSITION, subDt * 60);
+      ball.spinY *= Math.pow(SPIN_TO_ROLL_TRANSITION, subDt * 60);
     }
 
     // Angular velocity for visual rolling effect
@@ -73,10 +78,13 @@ export function updateBallPhysics(ball: Ball, dt: number = TARGET_DT): void {
     ball.spinY = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, ball.spinY));
   }
 
-  // Stop ball if below threshold
-  if (Math.abs(ball.vx) < MIN_VELOCITY && Math.abs(ball.vy) < MIN_VELOCITY) {
+  // Smooth stop: gradual deceleration to zero rather than hard cutoff
+  const finalSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+  if (finalSpeed < MIN_VELOCITY) {
     ball.vx = 0;
     ball.vy = 0;
+    ball.spinX *= 0.9;
+    ball.spinY *= 0.9;
   }
 }
 

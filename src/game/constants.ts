@@ -6,15 +6,22 @@ export const POCKET_RADIUS = 22;
 export const BALL_RADIUS = 11;
 export const CUE_BALL_RADIUS = 11;
 
-// Physics - Realistic billiard values
-export const FRICTION = 0.986;           // Rolling resistance per frame (slightly smoother)
-export const TABLE_FRICTION = 0.986;     // Same as FRICTION, adjustable separately
-export const WALL_RESTITUTION = 0.82;    // Cushion energy retention (0.82 = more realistic felt-top rail)
-export const BALL_RESTITUTION = 0.94;    // Ball-to-ball energy retention (slightly less bouncy = more realistic)
-export const MIN_VELOCITY = 0.04;        // Lower = balls roll out more naturally
+// Physics - Realistic billiard values (professionally tuned)
+// Values carefully calibrated for realistic ball behavior on a 9ft table simulation
+export const FRICTION = 0.988;           // Rolling resistance per frame (slightly less = balls roll smoother/longer)
+export const TABLE_FRICTION = 0.988;     // Same as FRICTION, adjustable separately for surface feel
+export const WALL_RESTITUTION = 0.78;    // Cushion energy retention (0.78 = realistic K66 rubber cushion response)
+export const BALL_RESTITUTION = 0.95;    // Ball-to-ball energy retention (phenolic resin balls ~0.95-0.97 COR)
+export const MIN_VELOCITY = 0.02;        // Lower = balls roll out naturally to a stop rather than sudden halt
 export const MAX_SHOT_POWER = 22;
 export const MIN_SHOT_POWER = 0.8;       // Minimum power threshold for a valid shot
 export const POWER_CHARGE_SPEED = 0.35;
+
+// Enhanced rolling friction model
+export const ROLLING_FRICTION = 0.993;   // Rolling resistance for slow-speed natural deceleration
+export const SLIDING_FRICTION = 0.975;   // Higher friction when ball is sliding (above threshold speed)
+export const SLIDING_THRESHOLD = 3.0;    // Speed above which ball slides rather than rolls
+export const SPIN_TO_ROLL_TRANSITION = 0.92; // How quickly spin converts to rolling motion
 
 // Mass system - Realistic mass ratios
 // Cue ball = 1.0, 8-ball = 1.05 (slightly heavier), others = 0.95-1.0

@@ -2,15 +2,17 @@ import { useState, useEffect } from 'react';
 import { useGame } from './game/useGame';
 import { HighScore, GameMode } from './game/types';
 
-/* ── Start Screen ── */
+/* ── Start Screen (professional polish) ── */
 function StartScreen({ onStart, highScores }: { onStart: (mode: GameMode) => void; highScores: HighScore[] }) {
   const [showScores, setShowScores] = useState(false);
   const [vis, setVis] = useState('opacity-0 scale-95');
+  const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
   useEffect(() => { requestAnimationFrame(() => setVis('opacity-100 scale-100')); }, []);
 
   return (
-    <div className={`absolute inset-0 z-20 flex items-center justify-center transition-all duration-500 ${vis}`}>
+    <div className={`absolute inset-0 z-20 flex items-center justify-center transition-all duration-700 ease-out ${vis}`}>
       <div className="absolute inset-0 bg-gradient-to-br from-[#081420] via-[#0F2030] to-[#081420]" />
+      {/* Animated floating orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {[...Array(24)].map((_, i) => (
           <div key={i} className="absolute rounded-full animate-pulse" style={{
@@ -32,14 +34,18 @@ function StartScreen({ onStart, highScores }: { onStart: (mode: GameMode) => voi
               <div className="mt-3 h-[2px] w-40 mx-auto bg-gradient-to-r from-transparent via-yellow-500/60 to-transparent rounded-full" />
             </div>
 
-            {/* Mode buttons */}
+            {/* Mode buttons with hover effects */}
             <div className="flex gap-3 justify-center mb-5">
               <button onClick={() => onStart('solo')}
-                className="px-8 py-3.5 bg-gradient-to-b from-emerald-500 to-emerald-700 text-white font-bold text-lg rounded-2xl shadow-[0_4px_20px_rgba(16,185,129,0.3)] hover:shadow-[0_4px_30px_rgba(16,185,129,0.45)] transition-all duration-300 hover:scale-105 active:scale-95 border border-emerald-400/20">
+                onMouseEnter={() => setHoveredBtn('solo')}
+                onMouseLeave={() => setHoveredBtn(null)}
+                className={`px-8 py-3.5 bg-gradient-to-b from-emerald-500 to-emerald-700 text-white font-bold text-lg rounded-2xl shadow-[0_4px_20px_rgba(16,185,129,0.3)] hover:shadow-[0_4px_30px_rgba(16,185,129,0.45)] transition-all duration-300 hover:scale-105 active:scale-95 border border-emerald-400/20 ${hoveredBtn === 'solo' ? 'scale-105' : ''}`}>
                 🎯 Solo Play
               </button>
               <button onClick={() => onStart('versus')}
-                className="px-8 py-3.5 bg-gradient-to-b from-orange-500 to-red-700 text-white font-bold text-lg rounded-2xl shadow-[0_4px_20px_rgba(234,88,12,0.3)] hover:shadow-[0_4px_30px_rgba(234,88,12,0.45)] transition-all duration-300 hover:scale-105 active:scale-95 border border-orange-400/20">
+                onMouseEnter={() => setHoveredBtn('versus')}
+                onMouseLeave={() => setHoveredBtn(null)}
+                className={`px-8 py-3.5 bg-gradient-to-b from-orange-500 to-red-700 text-white font-bold text-lg rounded-2xl shadow-[0_4px_20px_rgba(234,88,12,0.3)] hover:shadow-[0_4px_30px_rgba(234,88,12,0.45)] transition-all duration-300 hover:scale-105 active:scale-95 border border-orange-400/20 ${hoveredBtn === 'versus' ? 'scale-105' : ''}`}>
                 👥 2 Players
               </button>
             </div>

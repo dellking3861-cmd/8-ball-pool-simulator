@@ -25,12 +25,14 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   ctx.shadowBlur = 20 * scale;
   ctx.shadowOffsetY = 6 * scale;
 
-  // ── wood frame ──
+  // ── wood frame (premium mahogany) ──
   const woodGrad = ctx.createLinearGradient(0, -fw * scale, 0, (TABLE_HEIGHT + fw) * scale);
-  woodGrad.addColorStop(0, '#7B4B2A');
-  woodGrad.addColorStop(0.15, '#A06030');
-  woodGrad.addColorStop(0.5, '#6B3F1F');
-  woodGrad.addColorStop(0.85, '#A06030');
+  woodGrad.addColorStop(0, '#6B3A1A');
+  woodGrad.addColorStop(0.12, '#8B5020');
+  woodGrad.addColorStop(0.3, '#A06030');
+  woodGrad.addColorStop(0.5, '#7B4B2A');
+  woodGrad.addColorStop(0.7, '#A06030');
+  woodGrad.addColorStop(0.88, '#8B5020');
   woodGrad.addColorStop(1, '#5C3318');
   ctx.fillStyle = woodGrad;
   roundRect(ctx, -fw * scale, -fw * scale,
@@ -38,59 +40,71 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   ctx.fill();
   ctx.shadowColor = 'transparent';
 
-  // inner bevel
+  // inner bevel (dark edge)
   ctx.strokeStyle = '#3A1F0B';
   ctx.lineWidth = 2 * scale;
   roundRect(ctx, -fw * scale, -fw * scale,
     (TABLE_WIDTH + fw * 2) * scale, (TABLE_HEIGHT + fw * 2) * scale, 14 * scale);
   ctx.stroke();
 
-  // gold inlay line
-  ctx.strokeStyle = 'rgba(210,170,90,0.35)';
-  ctx.lineWidth = 1;
+  // gold inlay line (elegant trim)
+  ctx.strokeStyle = 'rgba(210,170,90,0.4)';
+  ctx.lineWidth = 1.5;
   roundRect(ctx, -(fw - 4) * scale, -(fw - 4) * scale,
     (TABLE_WIDTH + (fw - 4) * 2) * scale, (TABLE_HEIGHT + (fw - 4) * 2) * scale, 10 * scale);
   ctx.stroke();
 
-  // ── cushion base ──
+  // second gold inlay (inner)
+  ctx.strokeStyle = 'rgba(210,170,90,0.2)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, -(fw - 7) * scale, -(fw - 7) * scale,
+    (TABLE_WIDTH + (fw - 7) * 2) * scale, (TABLE_HEIGHT + (fw - 7) * 2) * scale, 8 * scale);
+  ctx.stroke();
+
+  // ── cushion base (dark green) ──
   ctx.fillStyle = '#18613A';
   ctx.fillRect(0, 0, TABLE_WIDTH * scale, TABLE_HEIGHT * scale);
 
-  // ── felt surface with texture ──
+  // ── felt surface with premium cloth texture ──
   const feltGrad = ctx.createRadialGradient(
     TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, 0,
     TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.55 * scale
   );
-  feltGrad.addColorStop(0, '#22A85A');
-  feltGrad.addColorStop(0.6, '#1C8C48');
-  feltGrad.addColorStop(1, '#156E38');
+  feltGrad.addColorStop(0, '#28B860');
+  feltGrad.addColorStop(0.4, '#20A852');
+  feltGrad.addColorStop(0.7, '#1A9044');
+  feltGrad.addColorStop(1, '#147838');
   ctx.fillStyle = feltGrad;
   const feltL = CUSHION_WIDTH;
   ctx.fillRect(feltL * scale, feltL * scale,
     (TABLE_WIDTH - feltL * 2) * scale, (TABLE_HEIGHT - feltL * 2) * scale);
 
-  // subtle felt texture (fiber-like lines)
-  ctx.globalAlpha = 0.03;
-  for (let i = 0; i < 150; i++) {
+  // premium felt texture (directional fiber lines - more realistic)
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  // Horizontal fibers (nap direction)
+  for (let i = 0; i < 200; i++) {
     const rx = (feltL + Math.random() * (TABLE_WIDTH - feltL * 2)) * scale;
     const ry = (feltL + Math.random() * (TABLE_HEIGHT - feltL * 2)) * scale;
-    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = 0.5 + Math.random() * 1;
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 0.3 + Math.random() * 0.8;
     ctx.beginPath();
+    const len = 4 + Math.random() * 12;
     ctx.moveTo(rx, ry);
-    ctx.lineTo(rx + (Math.random() - 0.5) * 8, ry + (Math.random() - 0.5) * 8);
+    ctx.lineTo(rx + len, ry + (Math.random() - 0.5) * 2);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
-  // ── cushion rails (3-D) ──
+  // ── cushion rails (3-D with realistic shading) ──
   drawCushions(ctx, scale);
 
   // ── diamonds on rails ──
   drawDiamonds(ctx, scale);
 
   // ── head string & foot spot ──
-  ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   ctx.lineWidth = 1;
   ctx.setLineDash([5 * scale, 5 * scale]);
   ctx.beginPath();
@@ -99,7 +113,8 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  // foot spot
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath();
   ctx.arc(TABLE_WIDTH * 0.7 * scale, TABLE_HEIGHT / 2 * scale, 3 * scale, 0, Math.PI * 2);
   ctx.fill();
@@ -107,15 +122,27 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
   // ── pockets ──
   drawPockets(ctx, scale);
 
-  // ── overhead lamp light cone ──
+  // ── overhead lamp light cone (warmer, more dramatic) ──
   const lampGrad = ctx.createRadialGradient(
-    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, 20 * scale,
-    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.48 * scale
+    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, 10 * scale,
+    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.5 * scale
   );
-  lampGrad.addColorStop(0, 'rgba(255,250,220,0.07)');
-  lampGrad.addColorStop(0.5, 'rgba(255,250,220,0.03)');
+  lampGrad.addColorStop(0, 'rgba(255,245,210,0.10)');
+  lampGrad.addColorStop(0.3, 'rgba(255,245,210,0.06)');
+  lampGrad.addColorStop(0.6, 'rgba(255,245,210,0.03)');
   lampGrad.addColorStop(1, 'rgba(0,0,0,0.0)');
   ctx.fillStyle = lampGrad;
+  ctx.fillRect(feltL * scale, feltL * scale,
+    (TABLE_WIDTH - feltL * 2) * scale, (TABLE_HEIGHT - feltL * 2) * scale);
+
+  // subtle vignette on felt edges
+  const vignetteGrad = ctx.createRadialGradient(
+    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.2 * scale,
+    TABLE_WIDTH / 2 * scale, TABLE_HEIGHT / 2 * scale, TABLE_WIDTH * 0.5 * scale
+  );
+  vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.12)');
+  ctx.fillStyle = vignetteGrad;
   ctx.fillRect(feltL * scale, feltL * scale,
     (TABLE_WIDTH - feltL * 2) * scale, (TABLE_HEIGHT - feltL * 2) * scale);
 
@@ -320,54 +347,65 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Stripe with improved clipping ──
+  // ── Stripe with improved clipping and quality ──
   if (ball.stripe) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.clip();
-    // White stripe band
+    // White stripe band with softer edges
     const stripeGrad = ctx.createLinearGradient(x - r, y, x + r, y);
     stripeGrad.addColorStop(0, 'rgba(255,255,255,0.0)');
-    stripeGrad.addColorStop(0.1, '#FFFFFF');
+    stripeGrad.addColorStop(0.08, 'rgba(255,255,255,0.6)');
+    stripeGrad.addColorStop(0.15, '#FFFFFF');
     stripeGrad.addColorStop(0.5, '#FFFFFF');
-    stripeGrad.addColorStop(0.9, '#FFFFFF');
+    stripeGrad.addColorStop(0.85, '#FFFFFF');
+    stripeGrad.addColorStop(0.92, 'rgba(255,255,255,0.6)');
     stripeGrad.addColorStop(1, 'rgba(255,255,255,0.0)');
     ctx.fillStyle = stripeGrad;
-    ctx.fillRect(x - r, y - r * 0.38, r * 2, r * 0.76);
-    // Color circle overlay
-    const colorGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.40);
-    colorGrad.addColorStop(0, lighten(ball.color, 40));
-    colorGrad.addColorStop(0.7, ball.color);
-    colorGrad.addColorStop(1, darken(ball.color, 20));
+    ctx.fillRect(x - r, y - r * 0.40, r * 2, r * 0.80);
+    // Color circle overlay with gradient
+    const colorGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.42);
+    colorGrad.addColorStop(0, lighten(ball.color, 50));
+    colorGrad.addColorStop(0.5, ball.color);
+    colorGrad.addColorStop(1, darken(ball.color, 25));
     ctx.fillStyle = colorGrad;
     ctx.beginPath();
-    ctx.arc(x, y, r * 0.40, 0, Math.PI * 2);
+    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
     ctx.fill();
-    // White center
-    ctx.fillStyle = '#FFFFFF';
+    // White center with subtle gradient
+    const whiteGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.34);
+    whiteGrad.addColorStop(0, '#FFFFFF');
+    whiteGrad.addColorStop(0.7, '#FFFFFF');
+    whiteGrad.addColorStop(1, '#EEEEEE');
+    ctx.fillStyle = whiteGrad;
     ctx.beginPath();
-    ctx.arc(x, y, r * 0.32, 0, Math.PI * 2);
+    ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   } else if (ball.id !== 0) {
-    // Solid ball white circle
-    const circleGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.40);
+    // Solid ball white circle with gradient
+    const circleGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.42);
     circleGrad.addColorStop(0, '#FFFFFF');
-    circleGrad.addColorStop(0.6, '#FFFFFF');
-    circleGrad.addColorStop(1, '#EEEEEE');
+    circleGrad.addColorStop(0.5, '#FFFFFF');
+    circleGrad.addColorStop(0.8, '#F5F5F5');
+    circleGrad.addColorStop(1, '#E0E0E0');
     ctx.fillStyle = circleGrad;
     ctx.beginPath();
-    ctx.arc(x, y, r * 0.40, 0, Math.PI * 2);
+    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // ── Number ──
+  // ── Number (anti-aliased, better contrast) ──
   if (ball.id !== 0) {
-    ctx.fillStyle = '#000';
-    ctx.font = `bold ${r * 0.68}px 'Arial Black', Arial, sans-serif`;
+    // Number shadow for depth
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.font = `bold ${r * 0.70}px 'Arial Black', Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillText(ball.id.toString(), x + 0.5, y + 1);
+    // Number itself
+    ctx.fillStyle = '#000';
     ctx.fillText(ball.id.toString(), x, y + 0.5);
   }
 

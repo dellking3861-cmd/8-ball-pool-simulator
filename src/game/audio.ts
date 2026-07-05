@@ -1,8 +1,11 @@
-// Realistic billiard ball audio using Web Audio API synthesis
+// Professional billiard ball audio using Web Audio API synthesis
 let ctx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
+let sfxGain: GainNode | null = null;
+
 function ac(): AudioContext {
   if (!ctx) ctx = new AudioContext();
+  if (ctx.state === 'suspended') ctx.resume();
   return ctx;
 }
 
@@ -16,81 +19,97 @@ function getMasterGain(): GainNode {
   return masterGain;
 }
 
-// ─── Realistic ball-on-ball "click/clack" ───
-// Hard phenolic resin balls produce a short, bright "tock" with:
-//  • a sharp transient (white-noise burst ~2ms)
-//  • a resonant mid-frequency body (800-2500 Hz sine that decays quickly)
-//  • filtered noise tail
+function getSfxGain(): GainNode {
+  const a = ac();
+  if (!sfxGain) {
+    sfxGain = a.createGain();
+    sfxGain.gain.value = 1.0;
+    sfxGain.connect(getMasterGain());
+  }
+  return sfxGain;
+}
+
+const a = () => ac();
+
+// ─── Pitch variation helper ───
+function pitchVariation(base: number, range: number = 0.15): number {
+  return base * (1 + (Math.random() - 0.5) * range * 2);
+}
+
+// ─── Ball-on-ball collision sound ───
+// Produces a crisp phenolic resin "tock" with body resonance
 export function playHitSound(volume: number = 0.3) {
   try {
     const a = ac(), t = a.currentTime;
     const vol = Math.min(volume, 0.55);
-    const dest = getMasterGain();
+    const dest = getSfxGain();
+    const pitch = pitchVariation(1.0, 0.12);
 
-    // — sharp transient click (filtered noise) —
-    const nLen = Math.floor(a.sampleRate * 0.012);
-    const nBuf = a.createBuffer(1, nLen, a.sampleRate);
-    const nd = nBuf.getChannelData(0);
-    for (let i = 0; i < nLen; i++) {
-      nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 4);
-    }
-    const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
-    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2000;
-    const nGain = a.createGain();
-    nGain.gain.setValueAtTime(vol * 0.8, t);
-    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
-    nSrc.connect(hp).connect(nGain).connect(dest);
-    nSrc.start(t); nSrc.stop(t + 0.015);
-
-    // — resonant body tone —
-    const freq = 1200 + Math.random() * 800;
-    const osc = a.createOscillator();
-    osc.type = 'sine'; osc.frequency.value = freq;
-    const oGain = a.createGain();
-    oGain.gain.setValueAtTime(vol * 0.5, t);
-    oGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    osc.connect(oGain).connect(dest);
-    osc.start(t); osc.stop(t + 0.06);
-
-    // — low thump —
-    const osc2 = a.createOscillator();
-    osc2.type = 'sine'; osc2.frequency.value = 180 + Math.random() * 60;
-    const oGain2 = a.createGain();
-    oGain2.gain.setValueAtTime(vol * 0.3, t);
-    oGain2.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    osc2.connect(oGain2).connect(dest);
-    osc2.start(t); osc2.stop(t + 0.04);
-  } catch {}
-}
-
-// ─── Cushion bounce — softer, thuddy ───
-export function playCushionSound(volume: number = 0.2) {
-  try {
-    const a = ac(), t = a.currentTime;
-    const vol = Math.min(volume, 0.35);
-    const dest = getMasterGain();
-
-    // filtered noise thud
-    const nLen = Math.floor(a.sampleRate * 0.03);
+    // — sharp transient click (high-passed noise burst) —
+    const nLen = Math.floor(a.sampleRate * 0.01);
     const nBuf = a.createBuffer(1, nLen, a.sampleRate);
     const nd = nBuf.getChannelData(0);
     for (let i = 0; i < nLen; i++) {
       nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 3);
     }
     const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
-    const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 800;
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500 * pitch;
     const nGain = a.createGain();
-    nGain.gain.setValueAtTime(vol, t);
-    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    nGain.gain.setValueAtTime(vol * 0.9, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+    nSrc.connect(hp).connect(nGain).connect(dest);
+    nSrc.start(t); nSrc.stop(t + 0.015);
+
+    // — resonant body tone (mid) —
+    const freq = pitchVariation(1400, 0.2);
+    const osc = a.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = freq;
+    const oGain = a.createGain();
+    oGain.gain.setValueAtTime(vol * 0.45, t);
+    oGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(oGain).connect(dest);
+    osc.start(t); osc.stop(t + 0.06);
+
+    // — low thump (body resonance) —
+    const osc2 = a.createOscillator();
+    osc2.type = 'sine'; osc2.frequency.value = pitchVariation(200, 0.15);
+    const oGain2 = a.createGain();
+    oGain2.gain.setValueAtTime(vol * 0.25, t);
+    oGain2.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+    osc2.connect(oGain2).connect(dest);
+    osc2.start(t); osc2.stop(t + 0.04);
+  } catch {}
+}
+
+// ─── Cushion bounce — softer, rubbery thud ───
+export function playCushionSound(volume: number = 0.2) {
+  try {
+    const a = ac(), t = a.currentTime;
+    const vol = Math.min(volume, 0.35);
+    const dest = getSfxGain();
+    const pitch = pitchVariation(1.0, 0.1);
+
+    // rubber thud noise
+    const nLen = Math.floor(a.sampleRate * 0.025);
+    const nBuf = a.createBuffer(1, nLen, a.sampleRate);
+    const nd = nBuf.getChannelData(0);
+    for (let i = 0; i < nLen; i++) {
+      nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 2);
+    }
+    const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
+    const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700 * pitch;
+    const nGain = a.createGain();
+    nGain.gain.setValueAtTime(vol * 0.8, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
     nSrc.connect(lp).connect(nGain).connect(dest);
     nSrc.start(t); nSrc.stop(t + 0.06);
 
-    // rubber resonance
+    // rubber band resonance
     const osc = a.createOscillator();
-    osc.type = 'triangle'; osc.frequency.value = 120 + Math.random() * 40;
+    osc.type = 'triangle'; osc.frequency.value = pitchVariation(130, 0.12);
     const og = a.createGain();
-    og.gain.setValueAtTime(vol * 0.4, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    og.gain.setValueAtTime(vol * 0.35, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
     osc.connect(og).connect(dest);
     osc.start(t); osc.stop(t + 0.08);
   } catch {}
@@ -100,42 +119,43 @@ export function playCushionSound(volume: number = 0.2) {
 export function playPocketSound() {
   try {
     const a = ac(), t = a.currentTime;
-    const dest = getMasterGain();
+    const dest = getSfxGain();
+    const pitch = pitchVariation(1.0, 0.08);
 
-    // deep drop
+    // deep drop tone
     const osc = a.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(180, t);
-    osc.frequency.exponentialRampToValueAtTime(55, t + 0.25);
+    osc.frequency.setValueAtTime(180 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(50 * pitch, t + 0.2);
     const og = a.createGain();
-    og.gain.setValueAtTime(0.35, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    og.gain.setValueAtTime(0.4, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
     osc.connect(og).connect(dest);
     osc.start(t); osc.stop(t + 0.3);
 
-    // rattle noise
-    const nLen = Math.floor(a.sampleRate * 0.15);
+    // pocket rattle noise
+    const nLen = Math.floor(a.sampleRate * 0.12);
     const nBuf = a.createBuffer(1, nLen, a.sampleRate);
     const nd = nBuf.getChannelData(0);
     for (let i = 0; i < nLen; i++) {
-      const env = Math.pow(1 - i / nLen, 2) * (0.5 + 0.5 * Math.sin(i / (a.sampleRate * 0.008)));
+      const env = Math.pow(1 - i / nLen, 2) * (0.5 + 0.5 * Math.sin(i / (a.sampleRate * 0.006)));
       nd[i] = (Math.random() * 2 - 1) * env;
     }
     const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
-    const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 2;
-    const ng = a.createGain(); ng.gain.setValueAtTime(0.2, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 550; bp.Q.value = 2.5;
+    const ng = a.createGain(); ng.gain.setValueAtTime(0.18, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
     nSrc.connect(bp).connect(ng).connect(dest);
     nSrc.start(t); nSrc.stop(t + 0.2);
 
     // satisfying "plop" harmonic
     const osc2 = a.createOscillator();
-    osc2.type = 'sine'; osc2.frequency.value = 440;
+    osc2.type = 'sine'; osc2.frequency.value = pitchVariation(480, 0.1);
     const og2 = a.createGain();
-    og2.gain.setValueAtTime(0.12, t + 0.03);
-    og2.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    og2.gain.setValueAtTime(0.14, t + 0.02);
+    og2.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     osc2.connect(og2).connect(dest);
-    osc2.start(t + 0.03); osc2.stop(t + 0.15);
+    osc2.start(t + 0.02); osc2.stop(t + 0.14);
   } catch {}
 }
 
@@ -143,32 +163,33 @@ export function playPocketSound() {
 export function playShotSound(power: number) {
   try {
     const a = ac(), t = a.currentTime;
-    const vol = 0.15 + Math.min(power * 0.015, 0.25);
-    const dest = getMasterGain();
+    const vol = 0.15 + Math.min(power * 0.015, 0.3);
+    const dest = getSfxGain();
+    const pitch = pitchVariation(1.0, 0.1);
 
-    // sharp tip crack
-    const nLen = Math.floor(a.sampleRate * 0.008);
+    // sharp tip crack (filtered noise burst)
+    const nLen = Math.floor(a.sampleRate * 0.006);
     const nBuf = a.createBuffer(1, nLen, a.sampleRate);
     const nd = nBuf.getChannelData(0);
     for (let i = 0; i < nLen; i++) {
-      nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 6);
+      nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 5);
     }
     const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
-    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3000;
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3500 * pitch;
     const ng = a.createGain();
     ng.gain.setValueAtTime(vol, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.01);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
     nSrc.connect(hp).connect(ng).connect(dest);
     nSrc.start(t); nSrc.stop(t + 0.01);
 
-    // impact body
+    // impact body resonance
     const osc = a.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(900 + power * 40, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+    osc.frequency.setValueAtTime(pitchVariation(1000 + power * 30, 0.1), t);
+    osc.frequency.exponentialRampToValueAtTime(pitchVariation(250, 0.15), t + 0.07);
     const og = a.createGain();
-    og.gain.setValueAtTime(vol * 0.6, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    og.gain.setValueAtTime(vol * 0.55, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
     osc.connect(og).connect(dest);
     osc.start(t); osc.stop(t + 0.1);
   } catch {}
@@ -178,7 +199,7 @@ export function playShotSound(power: number) {
 export function playFoulSound() {
   try {
     const a = ac(), t = a.currentTime;
-    const dest = getMasterGain();
+    const dest = getSfxGain();
     for (let i = 0; i < 2; i++) {
       const osc = a.createOscillator();
       osc.type = 'square';
@@ -192,18 +213,34 @@ export function playFoulSound() {
   } catch {}
 }
 
-// ─── Win fanfare ───
+// ─── Win fanfare (ascending arpeggio) ───
 export function playWinSound() {
   try {
     const a = ac(), t = a.currentTime;
-    const dest = getMasterGain();
+    const dest = getSfxGain();
     [523, 659, 784, 1047].forEach((f, i) => {
-      const o = a.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const o = a.createOscillator(); o.type = 'sine'; o.frequency.value = f * (1 + Math.random() * 0.02);
       const g = a.createGain();
-      g.gain.setValueAtTime(0.18, t + i * 0.11);
-      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.11 + 0.35);
+      g.gain.setValueAtTime(0.2, t + i * 0.11);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.11 + 0.4);
       o.connect(g).connect(dest);
-      o.start(t + i * 0.11); o.stop(t + i * 0.11 + 0.35);
+      o.start(t + i * 0.11); o.stop(t + i * 0.11 + 0.4);
+    });
+  } catch {}
+}
+
+// ─── Defeat sound (descending tones) ───
+export function playDefeatSound() {
+  try {
+    const a = ac(), t = a.currentTime;
+    const dest = getSfxGain();
+    [400, 350, 300, 220].forEach((f, i) => {
+      const o = a.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+      const g = a.createGain();
+      g.gain.setValueAtTime(0.12, t + i * 0.15);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.3);
+      o.connect(g).connect(dest);
+      o.start(t + i * 0.15); o.stop(t + i * 0.15 + 0.3);
     });
   } catch {}
 }
@@ -212,26 +249,78 @@ export function playWinSound() {
 export function playTurnSound() {
   try {
     const a = ac(), t = a.currentTime;
-    const dest = getMasterGain();
-    const o = a.createOscillator(); o.type = 'sine'; o.frequency.value = 660;
+    const dest = getSfxGain();
+    const o = a.createOscillator(); o.type = 'sine'; o.frequency.value = pitchVariation(660, 0.08);
     const g = a.createGain();
-    g.gain.setValueAtTime(0.1, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
     o.connect(g).connect(dest);
-    o.start(t); o.stop(t + 0.15);
+    o.start(t); o.stop(t + 0.2);
   } catch {}
 }
 
-// ─── NEW: Ball rolling sound (subtle rumble) ───
+// ─── UI click sound ───
+export function playClickSound() {
+  try {
+    const a = ac(), t = a.currentTime;
+    const dest = getSfxGain();
+    const nLen = Math.floor(a.sampleRate * 0.003);
+    const nBuf = a.createBuffer(1, nLen, a.sampleRate);
+    const nd = nBuf.getChannelData(0);
+    for (let i = 0; i < nLen; i++) {
+      nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nLen, 2);
+    }
+    const nSrc = a.createBufferSource(); nSrc.buffer = nBuf;
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
+    const ng = a.createGain();
+    ng.gain.setValueAtTime(0.08, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.005);
+    nSrc.connect(hp).connect(ng).connect(dest);
+    nSrc.start(t); nSrc.stop(t + 0.006);
+  } catch {}
+}
+
+// ─── UI hover sound ───
+export function playHoverSound() {
+  try {
+    const a = ac(), t = a.currentTime;
+    const dest = getSfxGain();
+    const osc = a.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = pitchVariation(880, 0.05);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.04, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.connect(g).connect(dest);
+    osc.start(t); osc.stop(t + 0.07);
+  } catch {}
+}
+
+// ─── Countdown tick ───
+export function playCountdownSound() {
+  try {
+    const a = ac(), t = a.currentTime;
+    const dest = getSfxGain();
+    const osc = a.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = 1000;
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.connect(g).connect(dest);
+    osc.start(t); osc.stop(t + 0.09);
+  } catch {}
+}
+
+// ─── Ball rolling sound (subtle rumble) ───
 let rollingOsc: OscillatorNode | null = null;
 let rollingGain: GainNode | null = null;
 let rollingNoise: AudioBufferSourceNode | null = null;
+let rollingNoiseGain: GainNode | null = null;
 
 export function startRollingSound() {
   try {
     const a = ac();
-    const dest = getMasterGain();
-    if (rollingOsc) return; // already playing
+    const dest = getSfxGain();
+    if (rollingOsc) return;
 
     // Low rumble oscillator
     rollingOsc = a.createOscillator();
@@ -252,12 +341,12 @@ export function startRollingSound() {
     rollingNoise = a.createBufferSource();
     rollingNoise.buffer = nBuf;
     rollingNoise.loop = true;
-    const noiseGain = a.createGain();
-    noiseGain.gain.value = 0;
+    rollingNoiseGain = a.createGain();
+    rollingNoiseGain.gain.value = 0;
     const lp = a.createBiquadFilter();
     lp.type = 'lowpass';
     lp.frequency.value = 200;
-    rollingNoise.connect(lp).connect(noiseGain).connect(dest);
+    rollingNoise.connect(lp).connect(rollingNoiseGain).connect(dest);
     rollingNoise.start();
   } catch {}
 }
@@ -265,18 +354,20 @@ export function startRollingSound() {
 export function updateRollingSound(speed: number) {
   try {
     if (!rollingGain || !rollingOsc) return;
-    // Map speed to volume (0-1 range)
-    const vol = Math.min(speed * 0.02, 0.08);
+    const vol = Math.min(speed * 0.025, 0.1);
     rollingGain.gain.setValueAtTime(vol, ac().currentTime);
-    // Pitch shift with speed
-    rollingOsc.frequency.setValueAtTime(40 + speed * 2, ac().currentTime);
+    rollingOsc.frequency.setValueAtTime(40 + speed * 2.5, ac().currentTime);
+    if (rollingNoiseGain) {
+      rollingNoiseGain.gain.setValueAtTime(vol * 0.5, ac().currentTime);
+    }
   } catch {}
 }
 
 export function stopRollingSound() {
   try {
-    if (rollingOsc) { rollingOsc.stop(); rollingOsc.disconnect(); rollingOsc = null; }
+    if (rollingOsc) { try { rollingOsc.stop(); } catch {} rollingOsc.disconnect(); rollingOsc = null; }
     if (rollingGain) { rollingGain.disconnect(); rollingGain = null; }
-    if (rollingNoise) { rollingNoise.stop(); rollingNoise.disconnect(); rollingNoise = null; }
+    if (rollingNoise) { try { rollingNoise.stop(); } catch {} rollingNoise.disconnect(); rollingNoise = null; }
+    if (rollingNoiseGain) { rollingNoiseGain.disconnect(); rollingNoiseGain = null; }
   } catch {}
 }

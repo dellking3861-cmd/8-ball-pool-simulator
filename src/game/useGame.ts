@@ -19,7 +19,8 @@ import {
 } from './renderer';
 import {
   playHitSound, playCushionSound, playPocketSound,
-  playShotSound, playFoulSound, playWinSound, playTurnSound,
+  playShotSound, playFoulSound, playWinSound, playDefeatSound,
+  playTurnSound, playClickSound,
   startRollingSound, updateRollingSound, stopRollingSound
 } from './audio';
 
