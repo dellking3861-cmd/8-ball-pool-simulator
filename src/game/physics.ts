@@ -4,10 +4,12 @@ import {
   FRICTION, WALL_RESTITUTION, BALL_RESTITUTION, MIN_VELOCITY,
   POCKETS, BALL_RADIUS, BALL_COLORS, BALL_MASS,
   SPIN_FACTOR, SPIN_DECAY, MAX_SPIN, SPIN_CUSHION_EFFECT,
-  TOP_SPIN_FACTOR,
+  TOP_SPIN_FACTOR, BACK_SPIN_FACTOR, SIDE_SPIN_FACTOR,
+  SPIN_CURVE_FACTOR, MASSE_FACTOR,
   CUSHION_ENERGY_LOSS, CUSHION_FRICTION,
-  POCKET_DETECT_RADIUS_MULT,
-  PHYSICS_SUBSTEPS, TARGET_DT
+  POCKET_DETECT_RADIUS_MULT, POCKET_MOUTH_WIDTH,
+  PHYSICS_SUBSTEPS, TARGET_DT,
+  CUSHION_SPARK_THRESHOLD, COLLISION_SPARK_THRESHOLD, MAX_PARTICLES
 } from './constants';
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -43,8 +45,26 @@ export function updateBallPhysics(ball: Ball, dt: number = TARGET_DT): void {
       ball.vy += ball.spinY * SPIN_FACTOR * subDt * 60 * 0.02;
     }
 
-    // Angular velocity for visual rolling effect
+    // --- NEW: Spin swerve/curve effect ---
+    // Side spin causes the ball to curve in flight (like real billiards)
     const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    if (speed > 0.5 && Math.abs(ball.spinY) > 0.1) {
+      // Side spin curves the ball perpendicular to its direction of travel
+      const dirX = ball.vx / speed;
+      const dirY = ball.vy / speed;
+      // Curve force is perpendicular to direction, proportional to side spin
+      const curveForce = ball.spinY * SPIN_CURVE_FACTOR * subDt * 60 * 0.01;
+      ball.vx += -dirY * curveForce;
+      ball.vy += dirX * curveForce;
+    }
+    // Masse effect: vertical spin with steep angle causes curved trajectory
+    if (speed > 0.5 && Math.abs(ball.spinX) > 0.1) {
+      const masseForce = ball.spinX * MASSE_FACTOR * subDt * 60 * 0.01;
+      ball.vx += ball.vy / speed * masseForce;
+      ball.vy += -ball.vx / speed * masseForce;
+    }
+
+    // Angular velocity for visual rolling effect
     ball.angularV = speed / ball.radius;
     ball.rotation += ball.angularV * subDt * 60 * 0.05;
 
@@ -71,14 +91,17 @@ export function checkWallCollision(ball: Ball): { collided: boolean; particles: 
   const top = CUSHION_WIDTH + ball.radius;
   const bottom = TABLE_HEIGHT - CUSHION_WIDTH - ball.radius;
 
-  const nearPocket = POCKETS.some(p => distance({ x: ball.x, y: ball.y }, p) < POCKET_RADIUS * 2.2);
+  // Improved: only skip wall collision if ball is very close to pocket center
+  const nearPocket = POCKETS.some(p => distance({ x: ball.x, y: ball.y }, p) < POCKET_RADIUS * 1.5);
   if (nearPocket) return { collided: false, particles: [] };
 
-  const doWallHit = (speed: number) => {
-    if (speed > 1) {
-      const count = Math.min(10, Math.floor(speed * 2));
+  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+
+  const doWallHit = (spd: number) => {
+    if (spd > CUSHION_SPARK_THRESHOLD) {
+      const count = Math.min(8, Math.floor(spd * 1.5));
       for (let i = 0; i < count; i++) {
-        particles.push(createSparkParticle(ball.x, ball.y, speed));
+        particles.push(createCushionSparkParticle(ball.x, ball.y, spd));
       }
     }
   };
@@ -87,44 +110,54 @@ export function checkWallCollision(ball: Ball): { collided: boolean; particles: 
     ball.x = left;
     // Apply spin effect on cushion rebound
     const spinEffect = ball.spinY * SPIN_CUSHION_EFFECT;
+    // Side spin changes rebound angle (like real billiards)
+    const sideSpinEffect = ball.spinY * SIDE_SPIN_FACTOR * 0.15;
     ball.vx = Math.abs(ball.vx) * WALL_RESTITUTION;
-    ball.vy += spinEffect;
+    ball.vy += spinEffect + sideSpinEffect;
     // Energy loss
     ball.vx *= (1 - CUSHION_ENERGY_LOSS);
     // Cushion friction
     ball.vy *= CUSHION_FRICTION;
+    // Reduce spin on cushion contact
+    ball.spinY *= 0.7;
     collided = true;
-    doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
+    doWallHit(speed);
   }
   if (ball.x >= right) {
     ball.x = right;
     const spinEffect = ball.spinY * SPIN_CUSHION_EFFECT;
+    const sideSpinEffect = ball.spinY * SIDE_SPIN_FACTOR * 0.15;
     ball.vx = -Math.abs(ball.vx) * WALL_RESTITUTION;
-    ball.vy += spinEffect;
+    ball.vy += spinEffect + sideSpinEffect;
     ball.vx *= (1 - CUSHION_ENERGY_LOSS);
     ball.vy *= CUSHION_FRICTION;
+    ball.spinY *= 0.7;
     collided = true;
-    doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
+    doWallHit(speed);
   }
   if (ball.y <= top) {
     ball.y = top;
     const spinEffect = ball.spinX * SPIN_CUSHION_EFFECT;
+    const sideSpinEffect = ball.spinX * SIDE_SPIN_FACTOR * 0.15;
     ball.vy = Math.abs(ball.vy) * WALL_RESTITUTION;
-    ball.vx += spinEffect;
+    ball.vx += spinEffect + sideSpinEffect;
     ball.vy *= (1 - CUSHION_ENERGY_LOSS);
     ball.vx *= CUSHION_FRICTION;
+    ball.spinX *= 0.7;
     collided = true;
-    doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
+    doWallHit(speed);
   }
   if (ball.y >= bottom) {
     ball.y = bottom;
     const spinEffect = ball.spinX * SPIN_CUSHION_EFFECT;
+    const sideSpinEffect = ball.spinX * SIDE_SPIN_FACTOR * 0.15;
     ball.vy = -Math.abs(ball.vy) * WALL_RESTITUTION;
-    ball.vx += spinEffect;
+    ball.vx += spinEffect + sideSpinEffect;
     ball.vy *= (1 - CUSHION_ENERGY_LOSS);
     ball.vx *= CUSHION_FRICTION;
+    ball.spinX *= 0.7;
     collided = true;
-    doWallHit(Math.sqrt(ball.vx ** 2 + ball.vy ** 2));
+    doWallHit(speed);
   }
 
   return { collided, particles };
@@ -182,6 +215,13 @@ export function checkBallCollision(a: Ball, b: Ball): { collided: boolean; parti
       if (b.id === 0 && Math.abs(b.spinX) > 0.1) {
         a.vx += b.spinX * TOP_SPIN_FACTOR * 0.1;
       }
+      // Back spin effect: target ball gets less forward momentum
+      if (a.id === 0 && a.spinX < -0.1) {
+        b.vx += a.spinX * BACK_SPIN_FACTOR * 0.08;
+      }
+      if (b.id === 0 && b.spinX < -0.1) {
+        a.vx += b.spinX * BACK_SPIN_FACTOR * 0.08;
+      }
     }
 
     const particles: Particle[] = [];
@@ -189,10 +229,16 @@ export function checkBallCollision(a: Ball, b: Ball): { collided: boolean; parti
     const cy = (a.y + b.y) / 2;
     const speed = Math.sqrt(dvx * dvx + dvy * dvy);
 
-    if (speed > 1.5) {
-      const count = Math.min(14, Math.floor(speed * 2));
+    if (speed > COLLISION_SPARK_THRESHOLD) {
+      const count = Math.min(16, Math.floor(speed * 2.5));
       for (let i = 0; i < count; i++) {
         particles.push(createCollisionParticle(cx, cy, speed, a.color));
+      }
+      // Add extra glow particles for harder hits
+      if (speed > 4) {
+        for (let i = 0; i < 4; i++) {
+          particles.push(createGlowBurstParticle(cx, cy, speed, a.color));
+        }
       }
     }
 
@@ -209,15 +255,24 @@ export function checkPocketCollision(ball: Ball): { pocketed: boolean; pocketInd
     const pocket = POCKETS[i];
     const dist = distance({ x: ball.x, y: ball.y }, pocket);
 
-    // Progressive detection: ball enters pocket partially before being pocketed
-    const detectRadius = POCKET_RADIUS + ball.radius * POCKET_DETECT_RADIUS_MULT;
+    // Improved pocket detection with mouth geometry
+    // Corner pockets have wider mouths, side pockets are tighter
+    const isCorner = i === 0 || i === 2 || i === 3 || i === 5;
+    const mouthMultiplier = isCorner ? POCKET_MOUTH_WIDTH * 1.1 : POCKET_MOUTH_WIDTH;
+    const detectRadius = (POCKET_RADIUS + ball.radius * POCKET_DETECT_RADIUS_MULT) * mouthMultiplier;
+
     if (dist < detectRadius) {
       const particles: Particle[] = [];
-      for (let j = 0; j < 24; j++) {
+      // Enhanced pocket particles
+      for (let j = 0; j < 30; j++) {
         particles.push(createPocketParticle(pocket.x, pocket.y, ball.color));
       }
-      for (let j = 0; j < 10; j++) {
+      for (let j = 0; j < 12; j++) {
         particles.push(createStarParticle(pocket.x, pocket.y, ball.color));
+      }
+      // Add glow burst
+      for (let j = 0; j < 8; j++) {
+        particles.push(createGlowBurstParticle(pocket.x, pocket.y, 5, ball.color));
       }
       return { pocketed: true, pocketIndex: i, particles, pocketPos: { x: pocket.x, y: pocket.y } };
     }
@@ -299,15 +354,15 @@ export function computeTrajectory(cueBall: Ball, angle: number, allBalls: Ball[]
 }
 
 // ─── Particle factories ─────────────────────────────────────────────
-function createSparkParticle(x: number, y: number, speed: number): Particle {
+function createCushionSparkParticle(x: number, y: number, speed: number): Particle {
   const angle = Math.random() * Math.PI * 2;
   const vel = (0.5 + Math.random() * 2) * Math.min(speed * 0.3, 3);
   return {
     x, y,
     vx: Math.cos(angle) * vel,
     vy: Math.sin(angle) * vel,
-    life: 18 + Math.random() * 18,
-    maxLife: 36,
+    life: 20 + Math.random() * 20,
+    maxLife: 40,
     color: `hsl(${35 + Math.random() * 35}, 100%, ${55 + Math.random() * 35}%)`,
     size: 1.5 + Math.random() * 2.5,
     type: 'spark',
@@ -321,10 +376,25 @@ function createCollisionParticle(x: number, y: number, speed: number, color: str
     x, y,
     vx: Math.cos(angle) * vel,
     vy: Math.sin(angle) * vel,
-    life: 14 + Math.random() * 14,
-    maxLife: 28,
+    life: 16 + Math.random() * 16,
+    maxLife: 32,
     color: Math.random() > 0.4 ? color : '#FFFFFF',
     size: 1 + Math.random() * 2.5,
+    type: 'glow',
+  };
+}
+
+function createGlowBurstParticle(x: number, y: number, speed: number, color: string): Particle {
+  const angle = Math.random() * Math.PI * 2;
+  const vel = (1 + Math.random() * 3) * Math.min(speed * 0.15, 2);
+  return {
+    x, y,
+    vx: Math.cos(angle) * vel,
+    vy: Math.sin(angle) * vel,
+    life: 10 + Math.random() * 10,
+    maxLife: 20,
+    color: color,
+    size: 3 + Math.random() * 4,
     type: 'glow',
   };
 }
@@ -336,8 +406,8 @@ function createPocketParticle(x: number, y: number, color: string): Particle {
     x, y,
     vx: Math.cos(angle) * vel,
     vy: Math.sin(angle) * vel,
-    life: 35 + Math.random() * 35,
-    maxLife: 70,
+    life: 40 + Math.random() * 40,
+    maxLife: 80,
     color,
     size: 2.5 + Math.random() * 4,
     type: 'glow',
@@ -351,8 +421,8 @@ function createStarParticle(x: number, y: number, color: string): Particle {
     x, y,
     vx: Math.cos(angle) * vel,
     vy: Math.sin(angle) * vel,
-    life: 25 + Math.random() * 25,
-    maxLife: 50,
+    life: 30 + Math.random() * 30,
+    maxLife: 60,
     color,
     size: 3 + Math.random() * 4,
     type: 'star',
@@ -365,8 +435,8 @@ export function createTrailParticle(x: number, y: number, color: string): Partic
     y: y + (Math.random() - 0.5) * 3,
     vx: (Math.random() - 0.5) * 0.3,
     vy: (Math.random() - 0.5) * 0.3,
-    life: 10 + Math.random() * 10,
-    maxLife: 20,
+    life: 12 + Math.random() * 12,
+    maxLife: 24,
     color,
     size: 1 + Math.random() * 1.5,
     type: 'trail',
@@ -374,6 +444,10 @@ export function createTrailParticle(x: number, y: number, color: string): Partic
 }
 
 export function updateParticles(particles: Particle[]): Particle[] {
+  // Cap particle count
+  if (particles.length > MAX_PARTICLES) {
+    particles = particles.slice(-MAX_PARTICLES);
+  }
   return particles.filter(p => {
     p.x += p.vx;
     p.y += p.vy;

@@ -19,7 +19,8 @@ import {
 } from './renderer';
 import {
   playHitSound, playCushionSound, playPocketSound,
-  playShotSound, playFoulSound, playWinSound, playTurnSound
+  playShotSound, playFoulSound, playWinSound, playTurnSound,
+  startRollingSound, updateRollingSound, stopRollingSound
 } from './audio';
 
 const ANGLE_SPEED = 0.028;
@@ -328,6 +329,21 @@ export function useGame() {
       dt = Math.min(dt, MAX_DT); // Cap to prevent physics explosion
 
       for (const b of g.balls) updateBallPhysics(b, dt);
+
+      // Ball rolling sound
+      let maxSpeed = 0;
+      for (const b of g.balls) {
+        if (!b.pocketed) {
+          const spd = Math.sqrt(b.vx ** 2 + b.vy ** 2);
+          if (spd > maxSpeed) maxSpeed = spd;
+        }
+      }
+      if (maxSpeed > 1) {
+        startRollingSound();
+        updateRollingSound(maxSpeed);
+      } else {
+        stopRollingSound();
+      }
 
       for (const b of g.balls) {
         const wr = checkWallCollision(b);

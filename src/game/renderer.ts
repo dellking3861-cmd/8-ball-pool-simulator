@@ -1,7 +1,7 @@
 import { Ball, Particle, ScreenShake, TrajectoryHit, SpinState } from './types';
 import {
   TABLE_WIDTH, TABLE_HEIGHT, CUSHION_WIDTH, POCKET_RADIUS,
-  POCKETS, MAX_SHOT_POWER
+  POCKETS, MAX_SHOT_POWER, AMBIENT_GLOW_ALPHA
 } from './constants';
 
 // ═══════════════════════════════════════════════════════════════
@@ -70,8 +70,8 @@ export function renderTable(ctx: CanvasRenderingContext2D, scale: number, shake:
     (TABLE_WIDTH - feltL * 2) * scale, (TABLE_HEIGHT - feltL * 2) * scale);
 
   // subtle felt texture (fiber-like lines)
-  ctx.globalAlpha = 0.02;
-  for (let i = 0; i < 200; i++) {
+  ctx.globalAlpha = 0.03;
+  for (let i = 0; i < 150; i++) {
     const rx = (feltL + Math.random() * (TABLE_WIDTH - feltL * 2)) * scale;
     const ry = (feltL + Math.random() * (TABLE_HEIGHT - feltL * 2)) * scale;
     ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
@@ -201,32 +201,26 @@ function drawDiamonds(ctx: CanvasRenderingContext2D, s: number) {
     const x1 = cw + (tw / 2 - cw) * i / 4;
     const x2 = tw / 2 + (tw / 2 - cw) * i / 4;
     for (const x of [x1, x2]) {
-      ctx.beginPath();
-      diamond(ctx, x * s, cw / 2 * s, dSize);
-      ctx.fill();
-      ctx.beginPath();
-      diamond(ctx, x * s, (th - cw / 2) * s, dSize);
-      ctx.fill();
+      ctx.beginPath(); diamond(ctx, x * s, cw / 2 * s, dSize); ctx.fill();
+      ctx.beginPath(); diamond(ctx, x * s, (th - cw / 2) * s, dSize); ctx.fill();
     }
   }
   for (let i = 1; i <= 3; i++) {
     const y = cw + (th - cw * 2) * i / 4;
-    ctx.beginPath();
-    diamond(ctx, cw / 2 * s, y * s, dSize);
-    ctx.fill();
-    ctx.beginPath();
-    diamond(ctx, (tw - cw / 2) * s, y * s, dSize);
-    ctx.fill();
+    ctx.beginPath(); diamond(ctx, cw / 2 * s, y * s, dSize); ctx.fill();
+    ctx.beginPath(); diamond(ctx, (tw - cw / 2) * s, y * s, dSize); ctx.fill();
   }
 }
 
 function drawPockets(ctx: CanvasRenderingContext2D, s: number) {
   for (const p of POCKETS) {
+    // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.beginPath();
     ctx.arc(p.x * s, p.y * s, (POCKET_RADIUS + 4) * s, 0, Math.PI * 2);
     ctx.fill();
 
+    // Deep hole
     const holeGrad = ctx.createRadialGradient(p.x * s, p.y * s, 0, p.x * s, p.y * s, POCKET_RADIUS * s);
     holeGrad.addColorStop(0, '#050505');
     holeGrad.addColorStop(0.85, '#0A0A0A');
@@ -236,6 +230,7 @@ function drawPockets(ctx: CanvasRenderingContext2D, s: number) {
     ctx.arc(p.x * s, p.y * s, POCKET_RADIUS * s, 0, Math.PI * 2);
     ctx.fill();
 
+    // Gold rim
     const rimGrad = ctx.createRadialGradient(
       p.x * s, p.y * s, (POCKET_RADIUS - 2) * s,
       p.x * s, p.y * s, (POCKET_RADIUS + 3) * s
@@ -274,7 +269,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  BALL  – 3-D lit sphere with stripe / number / rolling effect
+//  BALL  – 3-D lit sphere with realistic shading
 // ═══════════════════════════════════════════════════════════════
 export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: number, time: number) {
   if (ball.pocketed && ball.sinkAnim <= 0) return;
@@ -286,9 +281,9 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
 
   // Sink animation – shrink into pocket
   if (ball.sinkAnim > 0 && ball.sinkPocket) {
-    const t = 1 - ball.sinkAnim; // 0→1
-    drawScale = 1 - t * 0.7;
-    drawAlpha = 1 - t;
+    const t = 1 - ball.sinkAnim;
+    drawScale = 1 - t * 0.75;
+    drawAlpha = 1 - t * t;
     bx = ball.x + (ball.sinkPocket.x - ball.x) * t * 0.5;
     by = ball.y + (ball.sinkPocket.y - ball.y) * t * 0.5;
   }
@@ -300,53 +295,74 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
   ctx.save();
   ctx.globalAlpha = drawAlpha;
 
-  // shadow (ellipse for realism)
+  // ── Shadow (ellipse for realism) ──
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath();
   ctx.ellipse(x + 1.5 * scale, y + 2.5 * scale, r * 0.92, r * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ball body gradient
-  const bg = ctx.createRadialGradient(x - r * 0.28, y - r * 0.32, r * 0.08, x, y, r);
+  // ── Ball body with rich 3D shading ──
+  const bg = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.05, x, y, r);
   if (ball.id === 0) {
     bg.addColorStop(0, '#FFFFFF');
-    bg.addColorStop(0.55, '#F0F0F0');
-    bg.addColorStop(1, '#B8B8B8');
+    bg.addColorStop(0.4, '#F5F5F5');
+    bg.addColorStop(0.7, '#E0E0E0');
+    bg.addColorStop(1, '#A0A0A0');
   } else {
-    bg.addColorStop(0, lighten(ball.color, 55));
-    bg.addColorStop(0.5, ball.color);
-    bg.addColorStop(1, darken(ball.color, 40));
+    bg.addColorStop(0, lighten(ball.color, 65));
+    bg.addColorStop(0.3, lighten(ball.color, 30));
+    bg.addColorStop(0.6, ball.color);
+    bg.addColorStop(0.85, darken(ball.color, 30));
+    bg.addColorStop(1, darken(ball.color, 55));
   }
   ctx.fillStyle = bg;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
-  // stripe
+  // ── Stripe with improved clipping ──
   if (ball.stripe) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.clip();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(x - r, y - r * 0.33, r * 2, r * 0.66);
-    ctx.fillStyle = ball.color;
+    // White stripe band
+    const stripeGrad = ctx.createLinearGradient(x - r, y, x + r, y);
+    stripeGrad.addColorStop(0, 'rgba(255,255,255,0.0)');
+    stripeGrad.addColorStop(0.1, '#FFFFFF');
+    stripeGrad.addColorStop(0.5, '#FFFFFF');
+    stripeGrad.addColorStop(0.9, '#FFFFFF');
+    stripeGrad.addColorStop(1, 'rgba(255,255,255,0.0)');
+    ctx.fillStyle = stripeGrad;
+    ctx.fillRect(x - r, y - r * 0.38, r * 2, r * 0.76);
+    // Color circle overlay
+    const colorGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.40);
+    colorGrad.addColorStop(0, lighten(ball.color, 40));
+    colorGrad.addColorStop(0.7, ball.color);
+    colorGrad.addColorStop(1, darken(ball.color, 20));
+    ctx.fillStyle = colorGrad;
     ctx.beginPath();
     ctx.arc(x, y, r * 0.40, 0, Math.PI * 2);
     ctx.fill();
+    // White center
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.arc(x, y, r * 0.33, 0, Math.PI * 2);
+    ctx.arc(x, y, r * 0.32, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   } else if (ball.id !== 0) {
-    ctx.fillStyle = '#FFFFFF';
+    // Solid ball white circle
+    const circleGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.40);
+    circleGrad.addColorStop(0, '#FFFFFF');
+    circleGrad.addColorStop(0.6, '#FFFFFF');
+    circleGrad.addColorStop(1, '#EEEEEE');
+    ctx.fillStyle = circleGrad;
     ctx.beginPath();
     ctx.arc(x, y, r * 0.40, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // number
+  // ── Number ──
   if (ball.id !== 0) {
     ctx.fillStyle = '#000';
     ctx.font = `bold ${r * 0.68}px 'Arial Black', Arial, sans-serif`;
@@ -355,37 +371,46 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
     ctx.fillText(ball.id.toString(), x, y + 0.5);
   }
 
-  // specular highlight
+  // ── Specular highlight (bright spot) ──
   const sp = ctx.createRadialGradient(x - r * 0.22, y - r * 0.28, 0, x - r * 0.22, y - r * 0.28, r * 0.48);
-  sp.addColorStop(0, 'rgba(255,255,255,0.7)');
-  sp.addColorStop(0.45, 'rgba(255,255,255,0.18)');
+  sp.addColorStop(0, 'rgba(255,255,255,0.8)');
+  sp.addColorStop(0.35, 'rgba(255,255,255,0.25)');
   sp.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sp;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
-  // subtle edge dark ring
-  const edge = ctx.createRadialGradient(x, y, r * 0.85, x, y, r);
+  // Secondary specular (bottom-right soft reflection)
+  const sp2 = ctx.createRadialGradient(x + r * 0.15, y + r * 0.25, 0, x + r * 0.15, y + r * 0.25, r * 0.25);
+  sp2.addColorStop(0, 'rgba(255,255,255,0.12)');
+  sp2.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sp2;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Edge dark ring ──
+  const edge = ctx.createRadialGradient(x, y, r * 0.82, x, y, r);
   edge.addColorStop(0, 'rgba(0,0,0,0)');
-  edge.addColorStop(1, 'rgba(0,0,0,0.15)');
+  edge.addColorStop(0.7, 'rgba(0,0,0,0.03)');
+  edge.addColorStop(1, 'rgba(0,0,0,0.20)');
   ctx.fillStyle = edge;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
-  // Rolling illusion: rotating stripe/reflection
+  // ── Rolling illusion: rotating highlight ──
   if (!ball.pocketed && (Math.abs(ball.vx) > 0.5 || Math.abs(ball.vy) > 0.5)) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.clip();
-    // Moving highlight to simulate rolling
     const rollAngle = ball.rotation;
     const hx = x + Math.cos(rollAngle) * r * 0.3;
     const hy = y + Math.sin(rollAngle) * r * 0.3;
     const rollHL = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.3);
-    rollHL.addColorStop(0, 'rgba(255,255,255,0.15)');
+    rollHL.addColorStop(0, 'rgba(255,255,255,0.18)');
     rollHL.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = rollHL;
     ctx.beginPath();
@@ -394,15 +419,15 @@ export function renderBall(ctx: CanvasRenderingContext2D, ball: Ball, scale: num
     ctx.restore();
   }
 
-  // cue ball ambient glow
+  // ── Cue ball ambient glow (pulsing) ──
   if (ball.id === 0 && !ball.pocketed) {
-    const ga = 0.06 + Math.sin(time * 0.003) * 0.03;
-    const gg = ctx.createRadialGradient(x, y, r, x, y, r * 2.2);
+    const ga = AMBIENT_GLOW_ALPHA + Math.sin(time * 0.003) * 0.04;
+    const gg = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 2.5);
     gg.addColorStop(0, `rgba(200,230,255,${ga})`);
     gg.addColorStop(1, 'rgba(200,230,255,0)');
     ctx.fillStyle = gg;
     ctx.beginPath();
-    ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+    ctx.arc(x, y, r * 2.5, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -559,22 +584,18 @@ export function renderCueAndTrajectory(
   if (spin && (spin.topSpin > 0.05 || spin.backSpin > 0.05 || spin.leftSpin > 0.05 || spin.rightSpin > 0.05)) {
     const sr = ball.radius * scale * 1.1;
     const dotR = 2.5 * scale;
-    // Top spin indicator (above)
     if (spin.topSpin > 0.05) {
       ctx.fillStyle = `rgba(0,255,100,${0.3 + spin.topSpin * 0.4})`;
       ctx.beginPath(); ctx.arc(x, y - sr, dotR, 0, Math.PI * 2); ctx.fill();
     }
-    // Back spin indicator (below)
     if (spin.backSpin > 0.05) {
       ctx.fillStyle = `rgba(255,100,0,${0.3 + spin.backSpin * 0.4})`;
       ctx.beginPath(); ctx.arc(x, y + sr, dotR, 0, Math.PI * 2); ctx.fill();
     }
-    // Left spin indicator
     if (spin.leftSpin > 0.05) {
       ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.leftSpin * 0.4})`;
       ctx.beginPath(); ctx.arc(x - sr, y, dotR, 0, Math.PI * 2); ctx.fill();
     }
-    // Right spin indicator
     if (spin.rightSpin > 0.05) {
       ctx.fillStyle = `rgba(100,150,255,${0.3 + spin.rightSpin * 0.4})`;
       ctx.beginPath(); ctx.arc(x + sr, y, dotR, 0, Math.PI * 2); ctx.fill();
@@ -654,7 +675,7 @@ export function renderCueAndTrajectory(
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  POWER BAR  – cue-stick–style sidebar, drag to charge
+//  POWER BAR
 // ═══════════════════════════════════════════════════════════════
 export function renderPowerBar(
   ctx: CanvasRenderingContext2D,
@@ -722,7 +743,7 @@ export function renderPowerBar(
     rrPath(ctx, bx, by + barH - fillH, barW, fillH, 5 * s);
     ctx.fill();
 
-    // glow
+    // glow effect
     if (pct > 0.5) {
       const gg = ctx.createLinearGradient(bx, by + barH, bx, by + barH - fillH);
       gg.addColorStop(0, `rgba(255,${Math.floor(200 * (1 - pct))},0,${pct * 0.25})`);
@@ -733,7 +754,7 @@ export function renderPowerBar(
     }
   }
 
-  // slider handle (draggable)
+  // slider handle
   const handleY = by + barH - fillH;
   const handleH = 14 * s;
   const pulse = isCharging ? Math.sin(time * 0.008) * 2 * s : 0;
@@ -744,7 +765,7 @@ export function renderPowerBar(
   ctx.lineWidth = 1;
   rrPath(ctx, bx - 4 * s + pulse, handleY - handleH / 2, barW + 8 * s - pulse * 2, handleH, 4 * s);
   ctx.stroke();
-  // grip lines on handle
+  // grip lines
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   for (let i = -1; i <= 1; i++) {
     ctx.beginPath();
@@ -774,7 +795,6 @@ export function renderPowerBar(
   }
 }
 
-// Return the bounding box of the power bar for touch hit testing
 export function getPowerBarBounds(canvasW: number, canvasH: number, scale: number) {
   const s = Math.min(scale, 1.3);
   const barW = 22 * s;
@@ -816,7 +836,7 @@ export function renderSpinIndicator(
   ctx.textAlign = 'center';
   ctx.fillText('SPIN', cx, cy - sz - 8 * s);
 
-  // Top spin indicator
+  // Spin dots
   const dotR = 4 * s;
   const dist = sz * 0.7;
   if (spin.topSpin > 0.05) {
@@ -926,7 +946,7 @@ export function renderAngleIndicator(
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  PARTICLES
+//  PARTICLES – enhanced visual effects
 // ═══════════════════════════════════════════════════════════════
 export function renderParticles(ctx: CanvasRenderingContext2D, particles: Particle[], scale: number) {
   for (const p of particles) {
@@ -938,34 +958,46 @@ export function renderParticles(ctx: CanvasRenderingContext2D, particles: Partic
     ctx.globalAlpha = a;
 
     if (p.type === 'star') {
+      // Star with glow
+      ctx.save();
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8 * scale;
       ctx.fillStyle = p.color;
       drawStar(ctx, px, py, sz, 5);
       ctx.fill();
       ctx.fillStyle = '#FFF';
       drawStar(ctx, px, py, sz * 0.35, 5);
       ctx.fill();
+      ctx.restore();
+      // Outer glow ring
+      const starGlow = ctx.createRadialGradient(px, py, 0, px, py, sz * 2);
+      starGlow.addColorStop(0, `rgba(255,255,255,${a * 0.2})`);
+      starGlow.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = starGlow;
+      ctx.beginPath(); ctx.arc(px, py, sz * 2, 0, Math.PI * 2); ctx.fill();
     } else if (p.type === 'glow') {
-      const g = ctx.createRadialGradient(px, py, 0, px, py, sz * 2.2);
+      // Glow with soft falloff
+      const g = ctx.createRadialGradient(px, py, 0, px, py, sz * 2.5);
       g.addColorStop(0, p.color);
+      g.addColorStop(0.4, p.color.replace(')', `,${a * 0.3})`).replace('rgb', 'rgba'));
       g.addColorStop(1, 'transparent');
       ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(px, py, sz * 2.2, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(px, py, sz * 2.5, 0, Math.PI * 2);
       ctx.fill();
+      // Core
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(px, py, sz, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(px, py, sz * a, 0, Math.PI * 2);
       ctx.fill();
     } else if (p.type === 'trail') {
+      // Fading trail dot
       ctx.fillStyle = p.color;
       ctx.globalAlpha = a * 0.5;
-      ctx.beginPath();
-      ctx.arc(px, py, sz * a, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(px, py, sz * a, 0, Math.PI * 2);
       ctx.fill();
     } else {
+      // Spark
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(px, py, sz * a, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(px, py, sz * a, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -1007,13 +1039,17 @@ export function renderMessage(
   const tw = ctx.measureText(message).width;
   const pad = 22 * s;
 
+  // Background with glow
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
   rrPath(ctx, canvasW / 2 - tw / 2 - pad, yy - 17 * s, tw + pad * 2, 38 * s, 8 * s);
   ctx.fill();
+  ctx.shadowColor = 'rgba(255,215,0,0.2)';
+  ctx.shadowBlur = 10 * s;
   ctx.strokeStyle = 'rgba(255,215,0,0.45)';
   ctx.lineWidth = 1.5;
   rrPath(ctx, canvasW / 2 - tw / 2 - pad, yy - 17 * s, tw + pad * 2, 38 * s, 8 * s);
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
   ctx.fillStyle = '#FFD700';
   ctx.textAlign = 'center';
@@ -1109,9 +1145,7 @@ export function renderPlayerHUD(
   ctx.lineTo(p2x + boxW, p1y + boxH - 6 * s);
   ctx.quadraticCurveTo(p2x + boxW, p1y + boxH, p2x + boxW - 6 * s, p1y + boxH);
   ctx.lineTo(p2x + 6 * s, p1y + boxH);
-  ctx.quadraticCurveTo(p2x, p1y + boxH, p2x, p1y + boxH - 6 * s);
-  ctx.lineTo(p2x, p1y + 6 * s);
-  ctx.quadraticCurveTo(p2x, p1y, p2x + 6 * s, p1y);
+  ctx.quadraticCurveTo(p2x, p1y + boxH, p2x + 6 * s, p1y);
   ctx.closePath(); ctx.fill();
   if (p2Active) {
     ctx.strokeStyle = `rgba(255,180,0,${0.5 + Math.sin(time * 0.005) * 0.2})`;
